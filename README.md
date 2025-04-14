@@ -15,6 +15,13 @@ Motor imagery is the mental process of simulating movement without any physical 
 
 **NeuroCursor** leverages this principle to create an accessible system for people with spastic tetraparesis, enabling them to control a virtual cursor and interact with digital interfaces. By utilizing the **Emotiv Insight EEG headset**, NeuroCursor presents an affordable, user-friendly, and scalable solution for those with mobility impairments.
 
+### Inspiration
+
+The idea for NeuroCursor was heavily inspired by Perri Karyal, a YouTube Streamer, who created a BCI interface to control a game using just their brain signals. The streamer was able to use motor imagery to perform game actions such as moving, aiming, and shooting, by thinking about specific body movements. Watching this demonstration highlighted the potential of BCI systems to transform how people with physical impairments could interact with the digital world, motivating the creation of a similar system to allow individuals with spastic tetraparesis to control a cursor in a virtual environment.
+
+This innovative application of EEG technology in gaming opened my eyes to the vast possibilities in assistive technology, leading to the development of NeuroCursor, which aims to give users a simple yet powerful way to control digital interfaces.
+
+Check out the original inspiration video from the streamer here: [BCI Game Control Demo]([url](https://www.youtube.com/shorts/Y1lSyrQJ2C4)).
 ---
 
 ## 🧩 System Overview
@@ -33,7 +40,7 @@ The **NeuroCursor** BCI system is designed to classify brain signals into four m
 
 ### 🧠 EEG Setup
 
-- **Device**: Emotiv Insight (5-channel wireless EEG headset)
+- **Device**: [Emotiv Insight (5-channel wireless EEG headset)]([url](https://www.emotiv.com/products/insight))
 - **Sampling Rate**: 256 Hz (optimal for detecting motor imagery signals)
 - **Electrodes Used**: AF3, AF4, T7, T8, Pz (mapped to approximate C3, C4, Cz for sensorimotor processing)
 - **Sensor Type**: Semi-dry polymer electrodes
