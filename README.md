@@ -22,6 +22,7 @@ The idea for NeuroCursor was heavily inspired by Perri Karyal, a YouTube Streame
 This innovative application of EEG technology in gaming opened my eyes to the vast possibilities in assistive technology, leading to the development of NeuroCursor, which aims to give users a simple yet powerful way to control digital interfaces.
 
 Check out the original inspiration video from the streamer here: [BCI Game Control Demo]([url](https://www.youtube.com/shorts/Y1lSyrQJ2C4)).
+
 ---
 
 ## 🧩 System Overview
@@ -42,7 +43,7 @@ The **NeuroCursor** BCI system is designed to classify brain signals into four m
 
 - **Device**: [Emotiv Insight (5-channel wireless EEG headset)]([url](https://www.emotiv.com/products/insight))
 - **Sampling Rate**: 256 Hz (optimal for detecting motor imagery signals)
-- **Electrodes Used**: AF3, AF4, T7, T8, Pz (mapped to approximate C3, C4, Cz for sensorimotor processing)
+- **Electrodes Used**: AF3, AF4, T7, T8, Pz (mapped to approximate C3, C4, Cz for sensory motor processing)
 - **Sensor Type**: Semi-dry polymer electrodes
 - **Software**: EmotivPRO + Cortex SDK (Python API)
 - **Recording Length**: Each recording session lasts approximately 10 minutes per user
