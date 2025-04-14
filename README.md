@@ -1,4 +1,5 @@
-# 🧠 NeuroCursor: A Non-Invasive BCI System for Multiclass Cursor Control Using Motor Imagery and the Emotiv Insight EEG Headset
+# 🧠 NeuroCursor
+##A Non-Invasive BCI System for Multiclass Cursor Control Using Motor Imagery and the Emotiv Insight EEG Headset
 
 ## 📄 Abstract
 
