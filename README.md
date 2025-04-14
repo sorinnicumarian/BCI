@@ -3,7 +3,7 @@
 
 ## 📄 Abstract
 
-**NeuroCursor** is an experimental Brain-Computer Interface (BCI) designed to empower individuals with **spastic tetraparesis** to control a digital interface via **imagined movement**. Using the **Emotiv Insight**, a consumer-grade wireless EEG headset, the system captures brain signals from **motor imagery** (the mental rehearsal of movement) and classifies them into **four distinct mental commands**: `Move Left`, `Move Right`, `Click`, and `Backspace`. The system is a low-cost, non-invasive solution that aims to assist people with severe motor impairments by providing them with an alternative communication pathway. It consists of a modular pipeline for **signal acquisition**, **preprocessing**, **classification**, and **real-time cursor control**. This project is focused on accessibility, research, and neuroadaptive technology development.
+**NeuroCursor** is an experimental Brain-Computer Interface (BCI) designed to empower individuals with **spastic tetraparesis** to control a digital interface via **imagined movement**. Using the **Emotiv Insight**, a consumer-grade wireless EEG headset, the system captures brain signals from **motor imagery** (the mental rehearsal of movement) and classifies them into **four distinct mental commands**. The system is a low-cost, non-invasive solution that aims to assist people with severe motor impairments by providing them with an alternative communication pathway. It consists of a modular pipeline for **signal acquisition**, **preprocessing**, **classification**, and **real-time cursor control**. This project is focused on accessibility, research, and neuroadaptive technology development.
 
 ---
 
