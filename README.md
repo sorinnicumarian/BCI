@@ -78,7 +78,6 @@ The extracted features are passed through a **Support Vector Machine (SVM)** cla
 
 Future improvements are planned to involve more sophisticated models such as **Convolutional Neural Networks (CNN)** and **Long Short-Term Memory (LSTM)** networks to improve classification accuracy and allow for **subject-specific adaptation**.
 
----
 
 ## 💻 Software Architecture
 
@@ -92,3 +91,31 @@ Future improvements are planned to involve more sophisticated models such as **C
 ├── docs/                     # Research paper, visuals, and reports
 ├── README.md
 └── requirements.txt          # Python dependencies
+```
+
+## 🔧 Integration of BioAmp with NeuroCursor
+
+### BioAmp EXG Pill Integration
+
+We’ve incorporated the **BioAmp EXG Pill** and **Muscle BioAmp Shield** from the **Upside Down Labs DIY Neuroscience Kit** into this project to provide additional signal acquisition capabilities. By using the **BioAmp EXG Pill**, we can record **EEG**, **EOG**, **EMG**, and **ECG** signals alongside the **Emotiv Insight**, creating a more comprehensive BCI system.
+- **BioAmp EXG Pill**: A small, powerful analog front-end for recording biopotential signals.
+- **Muscle BioAmp Shield**: Used to record muscle signals and can be integrated with the **Arduino** platform for real-time biofeedback.
+
+### Setup and Usage:
+1. **Hardware Setup**: The **BioAmp EXG Pill** is connected to the **Muscle BioAmp Shield** and an **Arduino UNO** for signal processing and visualization.
+2. **Signal Integration**: Both devices send their data to a **Python** interface for analysis, enabling us to classify motor imagery from both **EEG (Emotiv)** and **EMG (BioAmp)** signals.
+3. **Signal Fusion**: By combining **EEG** and **EMG** signals, we can improve control precision, enabling a more reliable and accurate **cursor control system**.
+
+
+## 🧪 Testing and Calibration
+
+The system was calibrated using various mental tasks and motor imagery protocols. Adjustments to **thresholds**, **latency**, and **filter parameters** were made for optimal performance.
+
+The integration of **BioAmp** sensors allowed for additional muscle signal control, while **Emotiv Insight** provided the primary **EEG** control for basic cursor movements. The combination of these signals allows for a robust and adaptive system that can respond to different user needs.
+
+
+## 📚 References
+- **Emotiv Insight**: [Emotiv Insight Official Site](https://www.emotiv.com/products/insight)
+- **BioAmp EXG Pill**: [Upside Down Labs BioAmp Kit](https://store.upsidedownlabs.tech/)
+- **Chords Python**: [Chords-Python GitHub](https://github.com/Chords-Python/)
+
