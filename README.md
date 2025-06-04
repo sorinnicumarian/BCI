@@ -1,13 +1,13 @@
-# 🧠 BCI - NeuroCursor
+# BCI - NeuroCursor
 ## A Non-Invasive BCI System for Multiclass Cursor Control Using Motor Imagery and the Emotiv Insight EEG Headset
 
-## 📄 Abstract
+## Abstract
 
 **NeuroCursor** is an experimental Brain-Computer Interface (BCI) designed to empower individuals with **spastic tetraparesis** to control a digital interface via **imagined movement**. Using the **Emotiv Insight**, a consumer-grade wireless EEG headset, the system captures brain signals from **motor imagery** (the mental rehearsal of movement) and classifies them into **four distinct mental commands**. The system is a low-cost, non-invasive solution that aims to assist people with severe motor impairments by providing them with an alternative communication pathway. It consists of a modular pipeline for **signal acquisition**, **preprocessing**, **classification**, and **real-time cursor control**. This project is focused on accessibility, research, and neuroadaptive technology development.
 
 ---
 
-## 🧠 Motivation & Background
+## Motivation & Background
 
 **Spastic tetraparesis** refers to a condition where an individual suffers from muscle weakness or paralysis in all four limbs, usually caused by damage to the **central nervous system (CNS)**. While these individuals are often unable to use their limbs for voluntary movement, **motor planning** and **cognitive functions** are generally unaffected. This **cognitive-motor dissociation** presents an opportunity for **assistive interfaces** that can bridge the gap between the cognitive and physical realms through **motor imagery**.
 
@@ -25,9 +25,9 @@ Check out the original inspiration video from the streamer here: [BCI Game Contr
 
 ---
 
-## 🧩 System Overview
+## System Overview
 
-### 💡 Classes of Mental Commands
+### Classes of Mental Commands
 
 The **NeuroCursor** BCI system is designed to classify brain signals into four mental commands corresponding to distinct imagined movements. These movements are thought to activate specific brain regions, which are then captured and classified by the EEG headset.
 
@@ -37,9 +37,9 @@ The **NeuroCursor** BCI system is designed to classify brain signals into four m
 | Right Hand          | `→ Move Right`      | Move the cursor right |
 | Left Foot           | `↑ Move Up`         | Move the cursor up    |
 | Right Foot          | `↓ Move Down`       | Move the cursor down  |
-| Tongue/Swallow      | `🖱 Click`           | Click the cursor      |
+| Tongue/Swallow      | `  Click`           | Click the cursor      |
 
-### 🧠 EEG Setup
+### EEG Setup
 
 - **Device**: [Emotiv Insight (5-channel wireless EEG headset)]([url](https://www.emotiv.com/products/insight))
 - **Sampling Rate**: 256 Hz (optimal for detecting motor imagery signals)
@@ -52,7 +52,7 @@ This setup captures the necessary brainwave patterns while minimizing user disco
 
 ---
 
-## 🧪 Signal Processing Pipeline
+## Signal Processing Pipeline
 
 ### 1. **Data Acquisition**
 The EEG signals are streamed in real-time from the **Emotiv Insight** using the **Cortex SDK Python API**. During the data acquisition phase, users are presented with specific motor imagery tasks while visual stimuli (such as arrows) are displayed on the screen, indicating which movement to imagine. These visual cues are synchronized with EEG data to train the classifier.
@@ -79,10 +79,10 @@ The extracted features are passed through a **Support Vector Machine (SVM)** cla
 Future improvements are planned to involve more sophisticated models such as **Convolutional Neural Networks (CNN)** and **Long Short-Term Memory (LSTM)** networks to improve classification accuracy and allow for **subject-specific adaptation**.
 
 
-## 💻 Software Architecture
+## Software Architecture
 
 ```plaintext
-📦 bci-neurocursor/
+  bci-neurocursor/
 ├── bci_controller.py         # Handles signal stream and event-based logic
 ├── signal_processing.py      # Includes filters, CSP, FFT, and artifact removal
 ├── model_training.py         # Offline training and testing of the classifier
@@ -93,7 +93,7 @@ Future improvements are planned to involve more sophisticated models such as **C
 └── requirements.txt          # Python dependencies
 ```
 
-## 🔧 Integration of BioAmp with NeuroCursor
+## Integration of BioAmp with NeuroCursor
 
 ### BioAmp EXG Pill Integration
 
@@ -107,7 +107,7 @@ We’ve incorporated the **BioAmp EXG Pill** and **Muscle BioAmp Shield** from t
 3. **Signal Fusion**: By combining **EEG** and **EMG** signals, we can improve control precision, enabling a more reliable and accurate **cursor control system**.
 
 
-## 🧪 Testing and Calibration
+## Testing and Calibration
 
 The system was calibrated using various mental tasks and motor imagery protocols. Adjustments to **thresholds**, **latency**, and **filter parameters** were made for optimal performance.
 
