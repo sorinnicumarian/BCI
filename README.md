@@ -114,7 +114,7 @@ The system was calibrated using various mental tasks and motor imagery protocols
 The integration of **BioAmp** sensors allowed for additional muscle signal control, while **Emotiv Insight** provided the primary **EEG** control for basic cursor movements. The combination of these signals allows for a robust and adaptive system that can respond to different user needs.
 
 
-## 📚 References
+## References
 - **Emotiv Insight**: [Emotiv Insight Official Site](https://www.emotiv.com/products/insight)
 - **BioAmp EXG Pill**: [Upside Down Labs BioAmp Kit](https://store.upsidedownlabs.tech/)
 - **Chords Python**: [Chords-Python GitHub](https://github.com/Chords-Python/)
