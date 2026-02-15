@@ -1,121 +1,240 @@
-# BCI - NeuroCursor
-## A Non-Invasive BCI System for Multiclass Cursor Control Using Motor Imagery and the Emotiv Insight EEG Headset
+# Collect
+00
+01
+ - concentrate
+ - relax
+02
+ - concentrate
+ - relax 
+03
+ - black on left
+ - yellow on right
+ - subway surfer
 
-## Abstract
+# Setup
+# Abbreviatons
+1. FFT = Fast Fourier Transform.
+It simply answers the question:
 
-**NeuroCursor** is an experimental Brain-Computer Interface (BCI) designed to empower individuals with **spastic tetraparesis** to control a digital interface via **imagined movement**. Using the **Emotiv Insight**, a consumer-grade wireless EEG headset, the system captures brain signals from **motor imagery** (the mental rehearsal of movement) and classifies them into **four distinct mental commands**. The system is a low-cost, non-invasive solution that aims to assist people with severe motor impairments by providing them with an alternative communication pathway. It consists of a modular pipeline for **signal acquisition**, **preprocessing**, **classification**, and **real-time cursor control**. This project is focused on accessibility, research, and neuroadaptive technology development.
+“Instead of showing me the signal in time, show me how much of each frequency it contains.”
 
----
+Imagine hearing a music chord (many notes mixed).
+FFT tells you which musical notes are inside.
+For EEG:
 
-## Motivation & Background
+Alpha waves = 8–13 Hz
+Beta waves = 13–30 Hz
 
-**Spastic tetraparesis** refers to a condition where an individual suffers from muscle weakness or paralysis in all four limbs, usually caused by damage to the **central nervous system (CNS)**. While these individuals are often unable to use their limbs for voluntary movement, **motor planning** and **cognitive functions** are generally unaffected. This **cognitive-motor dissociation** presents an opportunity for **assistive interfaces** that can bridge the gap between the cognitive and physical realms through **motor imagery**.
+FFT tells us “how strong” each of these waves are.
 
-Motor imagery is the mental process of simulating movement without any physical action. It is well-documented that specific brain regions—such as the **sensorimotor cortex**—are activated during motor imagery. These regions can be captured non-invasively via **EEG** and processed for BCI applications.
+2. PSD = Power Spectral Density.
+FFT tells us what frequencies exist.
+PSD tells us how strong each frequency is.
+High‑school analogy:
 
-**NeuroCursor** leverages this principle to create an accessible system for people with spastic tetraparesis, enabling them to control a virtual cursor and interact with digital interfaces. By utilizing the **Emotiv Insight EEG headset**, NeuroCursor presents an affordable, user-friendly, and scalable solution for those with mobility impairments.
+FFT shows each note in a song.
+PSD shows how loud each note is.
 
-### Inspiration
+For EEG, PSD tells us things like:
 
-The idea for NeuroCursor was heavily inspired by Perri Karyal, a YouTube Streamer, who created a BCI interface to control a game using just their brain signals. The streamer was able to use motor imagery to perform game actions such as moving, aiming, and shooting, by thinking about specific body movements. Watching this demonstration highlighted the potential of BCI systems to transform how people with physical impairments could interact with the digital world, motivating the creation of a similar system to allow individuals with spastic tetraparesis to control a cursor in a virtual environment.
+“Is alpha strong?” → relaxed
+“Is beta strong?” → focused
+“Is theta strong?” → sleepy
 
-This innovative application of EEG technology in gaming opened my eyes to the vast possibilities in assistive technology, leading to the development of NeuroCursor, which aims to give users a simple yet powerful way to control digital interfaces.
+# Context
+0. Brain-Computer Interface (BCI) system that leverages electroencephalography (EEG) signals to control external devices in real-time. This project demonstrates how EEG signals can be classified into different mental states (attentive and relaxed) to control a car racing game without physical input devices. 
 
-Check out the original inspiration video from the streamer here: [BCI Game Control Demo]([url](https://www.youtube.com/shorts/Y1lSyrQJ2C4)).
+1. Base value = 512. If a value = 519, consider it a note from a song. It does not say if a song is energetic or slow. You need to know how fast the notes are played in order to figure out if it a DnB song or not. 
 
----
+So, the concentration is given by how fast the values rise or fall.
+Concentration = faster wiggles (13–30 Hz → Beta waves).
+Relaxation = slower wiggles (8–13 Hz → Alpha waves). That’s 8–13 cycles per second → relaxation.
 
-## System Overview
+if the signal is basically flat (not wiggling fast OR slow), you are doing nothing special: just awake, neutral.
+But this rarely happens because EEG is never perfectly still.
 
-### Classes of Mental Commands
+ [![Watch the video]https://youtube.com/shorts/p9bGwBhwvZo?si=rk1a1hAxnOOrg34C
 
-The **NeuroCursor** BCI system is designed to classify brain signals into four mental commands corresponding to distinct imagined movements. These movements are thought to activate specific brain regions, which are then captured and classified by the EEG headset.
+2. Band Hz - What it means (simple)Delta0.5–3deep sleep / slow wavesTheta3–8daydreaming / tiredAlpha8–13relaxed but awakeBeta13–30focused / thinking hard
+We don’t bother with Gamma because cheap sensors can’t measure it well.
 
-| Imagined Movement   | Command             | Purpose               |
-|---------------------|---------------------|-----------------------|
-| Left Hand           | `← Move Left`       | Move the cursor left  |
-| Right Hand          | `→ Move Right`      | Move the cursor right |
-| Left Foot           | `↑ Move Up`         | Move the cursor up    |
-| Right Foot          | `↓ Move Down`       | Move the cursor down  |
-| Tongue/Swallow      | `  Click`           | Click the cursor      |
+3. Why compute things like alpha/beta ratio?
+Because they are easy mental‑state indicators:
 
-### EEG Setup
+When you relax, alpha ↑
+When you focus, beta ↑
 
-- **Device**: [Emotiv Insight (5-channel wireless EEG headset)]([url](https://www.emotiv.com/products/insight))
-- **Sampling Rate**: 256 Hz (optimal for detecting motor imagery signals)
-- **Electrodes Used**: AF3, AF4, T7, T8, Pz (mapped to approximate C3, C4, Cz for sensory motor processing)
-- **Sensor Type**: Semi-dry polymer electrodes
-- **Software**: EmotivPRO + Cortex SDK (Python API)
-- **Recording Length**: Each recording session lasts approximately 10 minutes per user
+So:
+alpha_beta_ratio=alpha powerbeta power\text{alpha\_beta\_ratio} = \frac{\text{alpha power}}{\text{beta power}}alpha_beta_ratio=beta poweralpha power​
+If this ratio is:
 
-This setup captures the necessary brainwave patterns while minimizing user discomfort, thanks to the wireless design and ease of use of the **Emotiv Insight** headset.
+HIGH → you are relaxed
+LOW → you are focused
 
----
+This is why we use it to move a car forward or stop in a BCI game.
 
-## Signal Processing Pipeline
+3. SVM = Support Vector Machine, a type of machine‑learning classifier.
+But high‑school version:
 
-### 1. **Data Acquisition**
-The EEG signals are streamed in real-time from the **Emotiv Insight** using the **Cortex SDK Python API**. During the data acquisition phase, users are presented with specific motor imagery tasks while visual stimuli (such as arrows) are displayed on the screen, indicating which movement to imagine. These visual cues are synchronized with EEG data to train the classifier.
+It finds the best line that separates two groups of points.
 
-### 2. **Preprocessing**
-Raw EEG signals undergo several preprocessing steps to remove noise and ensure signal quality:
+Imagine plotting:
 
-- **Bandpass Filter**: Frequencies between 8–30 Hz (capturing **Mu** and **Beta** rhythms associated with motor imagery)
-- **Notch Filter**: 50 Hz filter to remove electrical noise from power lines
-- **Epoching**: The EEG data is segmented into 4-second windows with a 50% overlap to preserve temporal information
-- **Artifact Removal**: Techniques like **Independent Component Analysis (ICA)** and adaptive thresholding are used to remove artifacts from **eye blinks** and **muscle contractions**.
+alpha power on x‑axis
+beta power on y‑axis
 
-### 3. **Feature Extraction**
-The processed data is then transformed into features that can be used by the classification algorithm:
+Relaxed points cluster in one area,
+Focused points cluster in another area.
+SVM draws the line between them
 
-- **Common Spatial Patterns (CSP)**: Used to extract spatial features from the EEG data, enhancing the separation of motor imagery classes.
-- **Power Spectral Density (PSD)**: Calculated using the **Welch method** to estimate the power of different frequency bands.
-- **Fast Fourier Transform (FFT)**: Helps identify frequency components within the motor imagery range.
-- **Log-Variance and Band Power**: Calculated for motor-related bands (Mu and Beta) to quantify the brain activity during motor imagery tasks.
+4. Full car game PoC flow 
+Arduino reads EEG voltage
+Arduino filters it (0.5–30 Hz)
+Python receives samples
+Python computes PSD
+Python calculates alpha & beta
+Python sends features to the SVM model
+Model decides:
 
-### 4. **Classification**
-The extracted features are passed through a **Support Vector Machine (SVM)** classifier using a **one-vs-rest** strategy to classify the four commands. The SVM model is trained on offline data and validated through a **10-fold cross-validation** procedure. Initial classification accuracy ranges between 75–82%.
-
-Future improvements are planned to involve more sophisticated models such as **Convolutional Neural Networks (CNN)** and **Long Short-Term Memory (LSTM)** networks to improve classification accuracy and allow for **subject-specific adaptation**.
-
-
-## Software Architecture
-
-```plaintext
-  bci-neurocursor/
-├── bci_controller.py         # Handles signal stream and event-based logic
-├── signal_processing.py      # Includes filters, CSP, FFT, and artifact removal
-├── model_training.py         # Offline training and testing of the classifier
-├── virtual_cursor.py         # Integration with PyAutoGUI for OS-level mouse control
-├── data/                     # EEG CSV files (real or synthetic for training)
-├── docs/                     # Research paper, visuals, and reports
-├── README.md
-└── requirements.txt          # Python dependencies
-```
-
-## Integration of BioAmp with NeuroCursor
-
-### BioAmp EXG Pill Integration
-
-We’ve incorporated the **BioAmp EXG Pill** and **Muscle BioAmp Shield** from the **Upside Down Labs DIY Neuroscience Kit** into this project to provide additional signal acquisition capabilities. By using the **BioAmp EXG Pill**, we can record **EEG**, **EOG**, **EMG**, and **ECG** signals alongside the **Emotiv Insight**, creating a more comprehensive BCI system.
-- **BioAmp EXG Pill**: A small, powerful analog front-end for recording biopotential signals.
-- **Muscle BioAmp Shield**: Used to record muscle signals and can be integrated with the **Arduino** platform for real-time biofeedback.
-
-### Setup and Usage:
-1. **Hardware Setup**: The **BioAmp EXG Pill** is connected to the **Muscle BioAmp Shield** and an **Arduino UNO** for signal processing and visualization.
-2. **Signal Integration**: Both devices send their data to a **Python** interface for analysis, enabling us to classify motor imagery from both **EEG (Emotiv)** and **EMG (BioAmp)** signals.
-3. **Signal Fusion**: By combining **EEG** and **EMG** signals, we can improve control precision, enabling a more reliable and accurate **cursor control system**.
+focus → send “move forward”
+relaxed → send “stop”
 
 
-## Testing and Calibration
+Arduino receives command
+Game responds
 
-The system was calibrated using various mental tasks and motor imagery protocols. Adjustments to **thresholds**, **latency**, and **filter parameters** were made for optimal performance.
+## Arduino Hardware Installation Steps
+1. Connect your Arduino board to the PC via a USB cable.
+2. Connect the BioAmp EXG Pill to the EEG sensors
+3. Connect the BioAmp EXG Pill to the Arduino Board in this way: 
+ - VCC to 5V
+ - GND to GND
+ - OUT to A0
+ According to this image: /artefacts/images/connection_bioamp_exg_pill_to_arduino.png
 
-The integration of **BioAmp** sensors allowed for additional muscle signal control, while **Emotiv Insight** provided the primary **EEG** control for basic cursor movements. The combination of these signals allows for a robust and adaptive system that can respond to different user needs.
+## Arduino Software Installation Steps
+1. Install latest Arduino IDE
+
+## Arduino Software Test Steps
+1. Go to arduino_tests folder and test sequentially
+1.0 - test arduino board
+1.1 - test if the Bio Amp EXG Pill and the EEG sensors read some values
+1.2 - test EEG Filter 
+ 
+According to this image /Users/sorin/Documents/Repos/BCI/artefacts/images/arduino_test_02-eeg-filter.png
+
+The goal of this test is to make sure that the Arduino is correctly filtering the raw EEG signal from the BioAmp EXG Pill before the data is used for further processing (FFT, PSD, alpha/beta calculations, machine learning, etc.).
+EEG signals are extremely small and easily buried under noise (muscles, eye blinks, electrical interference).
+To use EEG for machine‑control (e.g., controlling a game with “focus” vs. “relax”), we must keep only the useful brainwave frequencies and remove everything else.
+This test verifies that the band‑pass filter running on the Arduino works as expected.
+
+Keep (pass-band)
+
+0.5–29.5 Hz
+This range contains the brain rhythms used for mental‑state recognition:
+Delta (0.5–3 Hz)
+Theta (3–8 Hz)
+Alpha (8–13 Hz)
+Beta (13–30 Hz)
+
+Remove (stop-band)
+
+Noise slower than 0.5 Hz (movement, drift)
+Noise faster than 30 Hz (muscle activity, EMG, electrical interference)
+Most 50/60 Hz mains noise
+
+The BioAmp EXG Pill outputs an amplified EEG signal that is DC‑biased to mid‑supply before entering the Arduino’s ADC.
+Since the Arduino ADC converts 0–5V into digital values 0–1023, the midpoint (≈2.5 V) corresponds to ≈512 in ADC units.
+Because EEG voltages are extremely small (microvolts), the amplified waveform appears as small variations around the midpoint.
+Therefore, filtered EEG samples typically appear in the range ≈450–600, oscillating around ~512.
+This behavior is normal and indicates that:
+
+the sensor is connected correctly
+the band‑pass filter is working
+the ADC is receiving a stable, centered signal
+the EEG waveform is present as small deviations around the baseline
+
+A “PASS” is confirmed when the signal shows stable fluctuations around 512, without clipping (0 or 1023) and without drifting out of range.
+
+🧪 5. When this output is considered CORRECT (PASSED)
+Your filter test is PASSED when:
+✔ The output values stay roughly between 400 and 600
+→ Shows the sensor is biased and amplified correctly.
+✔ The values fluctuate (not flat)
+→ Shows your EEG + noise is being picked up.
+✔ The numbers update at 256 samples/sec
+→ Shows your sampling loop is accurate.
+✔ No values hit 0 or 1023
+→ Means no clipping — signal is within safe range.
+✔ The average stays near 512
+→ Confirms correct biasing of the BioAmp output.
+All of your sample readings meet these criteria → Your system is working properly.
+
+1.3 BCI FTT
+Samples A0 at SAMPLE_RATE (intended 500/512 Hz).
+Filters each sample: 50 Hz notch + 45 Hz low‑pass.
+Every FFT_SIZE samples, runs a real‑FFT (CMSIS‑DSP).
+Builds a power spectrum and sums power in EEG bands.
+Smooths the bandpowers and prints normalized percentages:
+delta%,theta%,alpha%,beta%,gamma%
+
+# 
+cd BCI
+source .venv/bin/activate
+python your_script.py
+
+# Prediction
+	E_alpha	E_beta	E_theta	E_delta	alpha_beta_ratio	peak_frequency	spectral_centroid	spectral_slope	label
+count	1076.000000	1076.000000	1076.000000	1076.000000	1076.000000	1076.000000	1076.000000	1076.000000	1076.000000
+mean	5.233325	11.234776	5.386478	9.540712	0.628554	7.361088	11.386523	-10.798197	0.570632
+std	4.433682	7.175591	17.610713	15.219221	0.705698	7.718291	3.803338	0.572749	0.495216
+min	0.209921	0.508195	0.069137	0.059225	0.033710	0.000000	3.086847	-13.068684	0.000000
+25%	2.368279	5.292577	0.912572	1.431014	0.263072	0.998051	8.437347	-11.138286	0.000000
+50%	4.116698	10.165796	1.660228	4.291459	0.447632	3.992203	11.687700	-10.710864	1.000000
+75%	6.815488	16.141536	2.938309	11.400323	0.758137	12.226121	14.078900	-10.390765	1.000000
+max	36.817454	47.571487	244.958174	192.066974	8.958952	29.941520	21.986947	-9.546009	1.000000
+
+Short answer: mostly plausible, but there are 3 red flags you should fix before trusting the model:
+
+peak_frequency has a minimum of 0 Hz → residual DC/very‑low‑frequency energy is leaking in.
+spectral_slope ≈ −10.8 ± 0.57 → the scale is off (typical EEG 1/f slopes on log–log are around −1…−2).
+Theta/Delta have very large maxima (≈245, 192) → heavy‑tailed outliers (likely motion/eye/muscle artifacts).
+
+Below I explain what looks good, what’s suspicious, and how to fix it quickly.
+ What looks reasonable
+
+Class balance: label mean ≈ 0.571 → about 57% class 1 / 43% class 0 (not wildly imbalanced).
+Alpha/Beta ratio: mean 0.63, IQR ~0.26–0.76 (reasonable if recordings contain more “focused” segments on average). Max 8.96 means some eyes‑closed/relax chunks with dominant alpha—fine.
+Spectral centroid ~11.39 Hz (±3.8) → center of mass near the alpha/theta boundary—plausible for resting/task EEG.
+Peak frequency: median ~4 Hz, 75th percentile ~12.23 Hz, max ~29.94 Hz → dominant peaks in theta/alpha/beta bands as expected.
+
+So directionally, the features look like EEG.
+
+⚠️ What’s suspicious (and why)
 
 
-## References
-- **Emotiv Insight**: [Emotiv Insight Official Site](https://www.emotiv.com/products/insight)
-- **BioAmp EXG Pill**: [Upside Down Labs BioAmp Kit](https://store.upsidedownlabs.tech/)
-- **Chords Python**: [Chords-Python GitHub](https://github.com/Chords-Python/)
+peak_frequency min = 0 Hz
+With a 0.5–30 Hz band‑pass, the PSD peak should not be at 0 Hz. Zero‑Hz peaks usually mean:
 
+DC wasn’t fully removed (filter issue), or
+the Welch estimate still sees a maximum at the DC bin because the segment wasn’t centered/properly filtered.
+
+
+
+spectral_slope ≈ −10.8
+A log–log fit of PSD vs frequency for EEG typically yields slopes around −1 to −2 (1/f^k). Values near −10 suggest:
+
+You’re fitting ln(PSD) vs ln(f) including f=0 (you trimmed f[1:], good—but peak at 0 can distort neighborhood),
+or the units/scaling are off (e.g., not restricting the fit to 2–30 Hz),
+or PSD magnitudes are tiny and numerical scale dominates.
+→ Limit the fit to a clean band (e.g., 2–30 Hz) and use log10 for interpretability.
+
+
+
+Huge outliers in theta/delta
+
+E_theta max ≈ 245, E_delta max ≈ 192 with medians ~1.66 and ~4.29 → extremely heavy tails.
+Likely artifacts (movement/eye blinks) not rejected; they will swamp bandpowers and confuse the classifier.
+
+## License
+This project is licensed under the MIT License.

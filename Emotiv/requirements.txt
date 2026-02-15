@@ -1,5 +1,0 @@
-emotiv
-pyautogui
-scipy
-numpy
-scikit-learn
