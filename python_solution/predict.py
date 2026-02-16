@@ -293,6 +293,16 @@ def main():
             # Features
             feats = extract_features(x, FS)
 
+            # Apply exponential smoothing (Arduino-inspired)
+            smoothed_alpha = SMOOTHING_FACTOR * feats['E_alpha'] + (1 - SMOOTHING_FACTOR) * smoothed_alpha
+            smoothed_beta = SMOOTHING_FACTOR * feats['E_beta'] + (1 - SMOOTHING_FACTOR) * smoothed_beta
+            smoothed_ratio = (smoothed_alpha + 1e-12) / (smoothed_beta + 1e-12)
+
+            # Add smoothed features to the feature dictionary
+            feats['smoothed_alpha'] = smoothed_alpha
+            feats['smoothed_beta'] = smoothed_beta
+            feats['smoothed_ratio'] = smoothed_ratio
+
             # Enforce training column order EXACTLY
             df = pd.DataFrame([feats])[COLS]
 
