@@ -1,11 +1,3 @@
-COLS = [
-    'E_alpha', 'E_beta', 'E_theta', 'E_delta',
-    'alpha_beta_ratio', 'theta_alpha_ratio', 'beta_theta_ratio', 'engagement_index',
-    'beta_percentage',
-    'peak_frequency', 'spectral_centroid', 'spectral_slope',
-    'hjorth_mobility', 'hjorth_complexity', 'zero_crossing_rate', 'signal_variance',
-    'smoothed_beta', 'smoothed_alpha', 'smoothed_ratio'
-]
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
@@ -46,11 +38,11 @@ warnings.filterwarnings("ignore", category=UserWarning)
 # CONFIG
 # -----------------------------
 FS = 512                 # sampling rate (Hz)
-WIN = 512                # 1 s window @ 512 Hz (use 1024 for 2 s windows if you retrain)
-Z_MAX = 5.0              # z-score gate (artifact rejection)
+WIN = 512                # 1 s window @ 512 Hz
+Z_MAX = 6.0              # z-score gate (artifact rejection) - matches training notebook
 STD_MIN = 1e-3           # flat window guard
-THRESH = 0.75            # decision threshold on predicted class prob (if you add proba)
-VOTE_LEN = 5             # majority vote length (set to 1 to disable)
+THRESH = 0.50            # decision threshold on predicted class prob (0.5 is balanced)
+VOTE_LEN = 3             # majority vote length (faster than 5, set to 1 to disable)
 
 # IMPORTANT: must match training feature order exactly
 COLS = [
@@ -306,42 +298,33 @@ def main():
             # Enforce training column order EXACTLY
             df = pd.DataFrame([feats])[COLS]
 
-
-            # sanity: verify scaler expects 8 features
+            # Sanity: verify scaler expects correct number of features
             assert hasattr(scaler, "mean_") and scaler.mean_.shape[0] == len(COLS), \
                 f"Scaler expects {scaler.mean_.shape[0]} features, but live has {len(COLS)}"
 
-            # Scale + predict with your saved scaler/model
-            X_scaled = scaler.transform(df)          # DO NOT change column order!
-            pred = int(clf.predict(X_scaled)[0])
+            # Scale features
+            X_scaled = scaler.transform(df)
 
-            # Optional smoothing via majority vote (2-of-3)
+            # Predict using probabilities + threshold
+            if hasattr(clf, "predict_proba"):
+                proba1 = float(clf.predict_proba(X_scaled)[0, 1])
+                pred = int(proba1 >= THRESH)
+            else:
+                # Fallback to binary prediction
+                pred = int(clf.predict(X_scaled)[0])
+
+            # Optional smoothing via majority vote
             votes.append(pred)
             if VOTE_LEN > 1:
                 pred = int(sum(votes) >= (VOTE_LEN // 2 + 1))
 
-            # Print raw features that matter
-            print("Live feats:",
-                f"E_alpha={df.E_alpha.values[0]:.3f}",
-                f"E_beta={df.E_beta.values[0]:.3f}",
-                f"ratio={df.alpha_beta_ratio.values[0]:.3f}",
-                f"pf={df.peak_frequency.values[0]:.2f}",
-                f"slope={df.spectral_slope.values[0]:.2f}")
-
-            X_scaled = scaler.transform(df)
-            # Optional: look at scaled values once
-            print("Scaled (first 4):", np.round(X_scaled[0,:4], 3))
-
-            # Use probabilities + threshold
+            # Print diagnostics
             if hasattr(clf, "predict_proba"):
-                proba1 = float(clf.predict_proba(X_scaled)[0,1])
-                print(f"p_focus={proba1:.3f}")
-                pred = int(proba1 >= 0.50)  # tune later
+                print(f"E_alpha={feats['E_alpha']:.3f} E_beta={feats['E_beta']:.3f} "
+                      f"ratio={feats['alpha_beta_ratio']:.3f} | p_focus={proba1:.3f} pred={pred}")
             else:
-                # fallback
-                pred = int(clf.predict(X_scaled)[0])
-
-            print(f"pred={pred}")
+                print(f"E_alpha={feats['E_alpha']:.3f} E_beta={feats['E_beta']:.3f} "
+                      f"ratio={feats['alpha_beta_ratio']:.3f} | pred={pred}")
 
             # Optional keystroke (macOS: allow Accessibility)
             if HAVE_PYAUTOGUI:
