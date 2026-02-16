@@ -1,120 +1,305 @@
-import serial
-import numpy as np
-from scipy import signal
-import pandas as pd
-import time
-import pickle
-import pyautogui
-import serial.tools.list_ports as list_ports
+COLS = [
+    'E_alpha', 'E_beta', 'E_theta', 'E_delta',
+    'alpha_beta_ratio', 'peak_frequency', 'spectral_centroid', 'spectral_slope'
+]
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Real-time EEG predictor (UNO R4 + BioAmp) using model.pkl + scaler.pkl
+
+Fixes:
+- Proper 50 Hz notch (Hz + Q=30, fs=512)
+- Stable 0.5–30 Hz band-pass (SOS + sosfiltfilt)
+- 1 s windows (512 samples) + artifact rejection BEFORE filtering
+- Safe feature computation (peak in 0.5–30 Hz, slope in 2–30 Hz)
+- Enforce column order before scaler.transform to avoid mis-mapping
+- Robust serial port picker (prefer /dev/cu.usbmodem*, avoid debug console)
+- Optional majority voting for flicker-free control
+"""
+
 import os
-
-from collections import deque 
-
+import time
 import warnings
+from collections import deque
+
+import numpy as np
+import pandas as pd
+import serial
+import serial.tools.list_ports as list_ports
+from scipy import signal
+import pickle
+
+# Optional: keyboard control (grant Accessibility on macOS)
+try:
+    import pyautogui
+    HAVE_PYAUTOGUI = True
+except Exception:
+    HAVE_PYAUTOGUI = False
+
 warnings.filterwarnings("ignore", category=UserWarning)
 
+# -----------------------------
+# CONFIG
+# -----------------------------
+FS = 512                 # sampling rate (Hz)
+WIN = 512                # 1 s window @ 512 Hz (use 1024 for 2 s windows if you retrain)
+Z_MAX = 5.0              # z-score gate (artifact rejection)
+STD_MIN = 1e-3           # flat window guard
+THRESH = 0.75            # decision threshold on predicted class prob (if you add proba)
+VOTE_LEN = 5             # majority vote length (set to 1 to disable)
+
+# IMPORTANT: must match training feature order exactly
+COLS = [
+    'E_alpha', 'E_beta', 'E_theta', 'E_delta',
+    'alpha_beta_ratio', 'peak_frequency', 'spectral_centroid', 'spectral_slope'
+]
+
+# If your current model.pkl/scaler.pkl were trained on *absolute* bandpowers,
+# keep the feature function below as relative or switch to absolute consistently in training too.
+# For now we keep relative powers because this is the robust setting going forward.
+# If you did NOT retrain yet, and your model needs absolute powers, ping me and I’ll give the absolute version.
+
+
+# -----------------------------
+# Serial port selection
+# -----------------------------
 def pick_port():
+    """
+    Prefer UNO R4 native CDC (/dev/cu.usbmodem*) on macOS.
+    Avoid debug-console. Allow override via BCI_PORT env var.
+    """
+    env = os.environ.get("BCI_PORT")
+    if env:
+        return env
+
     ports = list(list_ports.comports())
     if not ports:
-        raise RuntimeError("No serial ports found. Is the board connected and powered?")
+        raise RuntimeError("No serial ports found. Plug the board and try again.")
 
-    # Prefer native USB CDC ACM devices (UNO R4 appears as 'usbmodem')
+    # 1) Prefer usbmodem
     for p in ports:
-        dev = p.device
-        if 'usbmodem' in dev.lower():
-            return dev
+        if "usbmodem" in p.device.lower():
+            return p.device
 
-    # Fallback to any cu.usb* device
+    # 2) Any cu.usb* except debug
     for p in ports:
-        dev = p.device
-        if dev.startswith('/dev/cu.usb'):
-            return dev
+        dev = p.device.lower()
+        if dev.startswith("/dev/cu.usb") and "debug" not in dev:
+            return p.device
 
-    # Last resort: first port
+    # 3) Last resort: first non-debug
+    for p in ports:
+        if "debug" not in p.device.lower():
+            return p.device
+
     return ports[0].device
 
 
-def setup_filters(sampling_rate):
-    b_notch, a_notch = signal.iirnotch(50.0 / (0.5 * sampling_rate), 30.0)
-    b_bandpass, a_bandpass = signal.butter(4, [0.5 / (0.5 * sampling_rate), 30.0 / (0.5 * sampling_rate)], 'band')
-    return b_notch, a_notch, b_bandpass, a_bandpass
+# -----------------------------
+# Filters (correct & stable)
+# -----------------------------
+def setup_filters(fs: int):
+    """
+    Proper 50 Hz notch (Hz + Q=30) and stable 0.5–30 Hz band-pass (SOS).
+    """
+    b_notch, a_notch = signal.iirnotch(w0=50.0, Q=30.0, fs=fs)                     # Step 1 (correct units + Q)
+    sos_bp = signal.butter(4, [0.5, 30.0], btype='band', fs=fs, output='sos')      # Step 2 (SOS)
+    return b_notch, a_notch, sos_bp
 
-def process_eeg_data(data, b_notch, a_notch, b_bandpass, a_bandpass):
-    data = signal.filtfilt(b_notch, a_notch, data)
-    data = signal.filtfilt(b_bandpass, a_bandpass, data)
-    return data
 
-def calculate_psd_features(segment, sampling_rate):
-    f, psd_values = signal.welch(segment, fs=sampling_rate, nperseg=len(segment))
-    bands = {'alpha': (8, 13), 'beta': (14, 30), 'theta': (4, 7), 'delta': (0.5, 3)}
-    features = {}
-    for band, (low, high) in bands.items():
-        idx = np.where((f >= low) & (f <= high))
-        features[f'E_{band}'] = np.sum(psd_values[idx])
-    features['alpha_beta_ratio'] = features['E_alpha'] / features['E_beta'] if features['E_beta'] > 0 else 0
-    return features
+def process_block(x: np.ndarray, b_notch, a_notch, sos_bp):
+    """
+    Zero-phase notch, then SOS band-pass for a single block.
+    """
+    x = signal.filtfilt(b_notch, a_notch, x)
+    x = signal.sosfiltfilt(sos_bp, x)
+    return x
 
-def calculate_additional_features(segment, sampling_rate):
-    f, psd = signal.welch(segment, fs=sampling_rate, nperseg=len(segment))
-    peak_frequency = f[np.argmax(psd)]
-    spectral_centroid = np.sum(f * psd) / np.sum(psd)
-    log_f = np.log(f[1:])
-    log_psd = np.log(psd[1:])
-    spectral_slope = np.polyfit(log_f, log_psd, 1)[0]
-    return {'peak_frequency': peak_frequency, 'spectral_centroid': spectral_centroid, 'spectral_slope': spectral_slope}
 
+# -----------------------------
+# Feature extraction (robust)
+# -----------------------------
+def calculate_psd_features(x: np.ndarray, fs: int):
+    """
+    Relative bandpowers + alpha/beta ratio (robust across sessions).
+    If your model.pkl was trained with absolute bandpowers, we should match that instead.
+    """
+    f, psd = signal.welch(x, fs=fs, nperseg=len(x))
+    total = psd[(f >= 0.5) & (f <= 30.0)].sum() + 1e-12
+
+    E_alpha = psd[(f >= 8)  & (f <= 13)].sum() / total
+    E_beta  = psd[(f >= 13) & (f <= 30)].sum() / total
+    E_theta = psd[(f >= 4)  & (f <= 7)].sum()  / total
+    E_delta = psd[(f >= 0.5)& (f <= 3)].sum()  / total
+
+    alpha_beta_ratio = (E_alpha + 1e-12) / (E_beta + 1e-12)
+
+    return {
+        'E_alpha': E_alpha, 'E_beta': E_beta,
+        'E_theta': E_theta, 'E_delta': E_delta,
+        'alpha_beta_ratio': alpha_beta_ratio
+    }
+
+
+def calculate_additional_features(x: np.ndarray, fs: int):
+    """
+    Peak in 0.5–30 Hz (avoid DC), slope in 2–30 Hz (log10), centroid in passband.
+    """
+    f, psd = signal.welch(x, fs=fs, nperseg=len(x))
+
+    idx_pb = (f >= 0.5) & (f <= 30.0)
+    peak_frequency = float(f[idx_pb][np.argmax(psd[idx_pb])])
+
+    idx_slope = (f >= 2.0) & (f <= 30.0)
+    logf = np.log10(f[idx_slope] + 1e-12)
+    logp = np.log10(psd[idx_slope] + 1e-12)
+    spectral_slope = float(np.polyfit(logf, logp, 1)[0])
+
+    spectral_centroid = float((f[idx_pb] * psd[idx_pb]).sum() / (psd[idx_pb].sum() + 1e-12))
+
+    return {
+        'peak_frequency': peak_frequency,
+        'spectral_centroid': spectral_centroid,
+        'spectral_slope': spectral_slope
+    }
+
+
+def extract_features(x: np.ndarray, fs: int):
+    feats = calculate_psd_features(x, fs)
+    feats.update(calculate_additional_features(x, fs))
+    return feats
+
+
+# -----------------------------
+# Load model + scaler (no Pipeline)
+# -----------------------------
 def load_model_and_scaler():
+    base = os.path.dirname(os.path.abspath(__file__))
+    model_path  = os.path.join(base, "model.pkl")
+    scaler_path = os.path.join(base, "scaler.pkl")
 
-    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-    model_path  = os.path.join(BASE_DIR, "model.pkl")
-    scaler_path = os.path.join(BASE_DIR, "scaler.pkl")
+    if not os.path.exists(model_path):
+        raise FileNotFoundError(f"model.pkl not found at: {model_path}")
+    if not os.path.exists(scaler_path):
+        raise FileNotFoundError(f"scaler.pkl not found at: {scaler_path}")
 
-    with open(model_path, 'rb') as f:
+    with open(model_path,  "rb") as f:
         clf = pickle.load(f)
-    with open(scaler_path, 'rb') as f:
-        scaler = pickle.load(f)   
+    with open(scaler_path, "rb") as f:
+        scaler = pickle.load(f)
     return clf, scaler
 
+
+# -----------------------------
+# Main loop
+# -----------------------------
 def main():
+    # Serial port
     port = pick_port()
     print(f"[INFO] Opening {port} @ 115200")
     ser = serial.Serial(port, 115200, timeout=1)
+
+    # Filters
+    b_notch, a_notch, sos_bp = setup_filters(FS)
+
+    # ML
     clf, scaler = load_model_and_scaler()
-    b_notch, a_notch, b_bandpass, a_bandpass = setup_filters(512)
-    buffer = deque(maxlen=512)  
 
-    while True:
+    # Buffers
+    block = deque(maxlen=WIN)
+    votes = deque(maxlen=VOTE_LEN)
+
+    print("[INFO] Streaming... (Ctrl+C to stop)")
+    try:
+        while True:
+            line = ser.readline()
+            if not line:
+                continue
+            try:
+                v = float(line.decode("utf-8", errors="ignore").strip())
+            except ValueError:
+                continue
+
+            block.append(v)
+            if len(block) < WIN:
+                continue
+
+            # Prepare 1 s window
+            x = np.asarray(block, dtype=np.float32)
+
+            # Artifact rejection BEFORE filtering
+            std = x.std()
+            if std < STD_MIN:
+                block.clear()
+                continue
+            zmax = np.max(np.abs((x - x.mean()) / (std + 1e-9)))
+            if zmax > Z_MAX:
+                block.clear()
+                continue
+
+            # Filters
+            x = process_block(x, b_notch, a_notch, sos_bp)
+
+            # Features
+            feats = extract_features(x, FS)
+
+            # Enforce training column order EXACTLY
+            df = pd.DataFrame([feats])[COLS]
+
+
+            # sanity: verify scaler expects 8 features
+            assert hasattr(scaler, "mean_") and scaler.mean_.shape[0] == len(COLS), \
+                f"Scaler expects {scaler.mean_.shape[0]} features, but live has {len(COLS)}"
+
+            # Scale + predict with your saved scaler/model
+            X_scaled = scaler.transform(df)          # DO NOT change column order!
+            pred = int(clf.predict(X_scaled)[0])
+
+            # Optional smoothing via majority vote (2-of-3)
+            votes.append(pred)
+            if VOTE_LEN > 1:
+                pred = int(sum(votes) >= (VOTE_LEN // 2 + 1))
+
+            # Print raw features that matter
+            print("Live feats:",
+                f"E_alpha={df.E_alpha.values[0]:.3f}",
+                f"E_beta={df.E_beta.values[0]:.3f}",
+                f"ratio={df.alpha_beta_ratio.values[0]:.3f}",
+                f"pf={df.peak_frequency.values[0]:.2f}",
+                f"slope={df.spectral_slope.values[0]:.2f}")
+
+            X_scaled = scaler.transform(df)
+            # Optional: look at scaled values once
+            print("Scaled (first 4):", np.round(X_scaled[0,:4], 3))
+
+            # Use probabilities + threshold
+            if hasattr(clf, "predict_proba"):
+                proba1 = float(clf.predict_proba(X_scaled)[0,1])
+                print(f"p_focus={proba1:.3f}")
+                pred = int(proba1 >= 0.50)  # tune later
+            else:
+                # fallback
+                pred = int(clf.predict(X_scaled)[0])
+
+            print(f"pred={pred}")
+
+            # Optional keystroke (macOS: allow Accessibility)
+            if HAVE_PYAUTOGUI:
+                key = 'w' if pred == 1 else 'space'
+                pyautogui.keyDown(key)
+                time.sleep(0.2)
+                pyautogui.keyUp(key)
+
+            block.clear()  # non-overlapping 1 s windows; remove if you later want overlap
+    except KeyboardInterrupt:
+        print("\n[INFO] Stopped by user.")
+    finally:
         try:
-            raw_data = ser.readline().decode('latin-1').strip()
-            if raw_data: 
-                eeg_value = float(raw_data)
-                buffer.append(eeg_value)
+            ser.close()
+            print("[INFO] Serial closed.")
+        except Exception:
+            pass
 
-                if len(buffer) == 512:
-                    buffer_array = np.array(buffer)
-                    processed_data = process_eeg_data(buffer_array, b_notch, a_notch, b_bandpass, a_bandpass)
-                    psd_features = calculate_psd_features(processed_data, 512)
-                    additional_features = calculate_additional_features(processed_data, 512)
-                    features = {**psd_features, **additional_features}
 
-                    df = pd.DataFrame([features])
-                    X_scaled = scaler.transform(df)
-                    prediction = clf.predict(X_scaled)
-                    print(f"Predicted Class: {prediction}")
-                    buffer.clear()
-                    if prediction == 0:
-                        pyautogui.keyDown('space')
-                        time.sleep(1)
-                        pyautogui.keyUp('space')
-
-                    elif prediction == 1:
-                        pyautogui.keyDown('w')
-                        time.sleep(1)
-                        pyautogui.keyUp('w') 
-                
-        except Exception as e:
-            print(f'Error: {e}')
-            continue
-
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
