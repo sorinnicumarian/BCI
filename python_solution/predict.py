@@ -1,6 +1,8 @@
 COLS = [
     'E_alpha', 'E_beta', 'E_theta', 'E_delta',
-    'alpha_beta_ratio', 'peak_frequency', 'spectral_centroid', 'spectral_slope'
+    'alpha_beta_ratio', 'theta_alpha_ratio', 'beta_theta_ratio', 'engagement_index',
+    'peak_frequency', 'spectral_centroid', 'spectral_slope',
+    'hjorth_mobility', 'hjorth_complexity', 'zero_crossing_rate', 'signal_variance'
 ]
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
@@ -51,7 +53,9 @@ VOTE_LEN = 5             # majority vote length (set to 1 to disable)
 # IMPORTANT: must match training feature order exactly
 COLS = [
     'E_alpha', 'E_beta', 'E_theta', 'E_delta',
-    'alpha_beta_ratio', 'peak_frequency', 'spectral_centroid', 'spectral_slope'
+    'alpha_beta_ratio', 'theta_alpha_ratio', 'beta_theta_ratio', 'engagement_index',
+    'peak_frequency', 'spectral_centroid', 'spectral_slope',
+    'hjorth_mobility', 'hjorth_complexity', 'zero_crossing_rate', 'signal_variance'
 ]
 
 # If your current model.pkl/scaler.pkl were trained on *absolute* bandpowers,
@@ -121,8 +125,7 @@ def process_block(x: np.ndarray, b_notch, a_notch, sos_bp):
 # -----------------------------
 def calculate_psd_features(x: np.ndarray, fs: int):
     """
-    Relative bandpowers + alpha/beta ratio (robust across sessions).
-    If your model.pkl was trained with absolute bandpowers, we should match that instead.
+    Relative bandpowers + frequency ratios (robust across sessions).
     """
     f, psd = signal.welch(x, fs=fs, nperseg=len(x))
     total = psd[(f >= 0.5) & (f <= 30.0)].sum() + 1e-12
@@ -133,11 +136,17 @@ def calculate_psd_features(x: np.ndarray, fs: int):
     E_delta = psd[(f >= 0.5)& (f <= 3)].sum()  / total
 
     alpha_beta_ratio = (E_alpha + 1e-12) / (E_beta + 1e-12)
+    theta_alpha_ratio = (E_theta + 1e-12) / (E_alpha + 1e-12)
+    beta_theta_ratio = (E_beta + 1e-12) / (E_theta + 1e-12)
+    engagement_index = E_beta / (E_alpha + E_theta + 1e-12)
 
     return {
         'E_alpha': E_alpha, 'E_beta': E_beta,
         'E_theta': E_theta, 'E_delta': E_delta,
-        'alpha_beta_ratio': alpha_beta_ratio
+        'alpha_beta_ratio': alpha_beta_ratio,
+        'theta_alpha_ratio': theta_alpha_ratio,
+        'beta_theta_ratio': beta_theta_ratio,
+        'engagement_index': engagement_index
     }
 
 
@@ -164,9 +173,37 @@ def calculate_additional_features(x: np.ndarray, fs: int):
     }
 
 
+def calculate_temporal_features(x: np.ndarray):
+    """
+    Time-domain features capturing signal dynamics
+    """
+    # Hjorth mobility (mean frequency indicator)
+    diff_x = np.diff(x)
+    hjorth_mobility = np.std(diff_x) / (np.std(x) + 1e-12)
+
+    # Hjorth complexity (change in frequency)
+    diff2_x = np.diff(diff_x)
+    mobility2 = np.std(diff2_x) / (np.std(diff_x) + 1e-12)
+    hjorth_complexity = mobility2 / (hjorth_mobility + 1e-12)
+
+    # Zero-crossing rate (rough frequency estimate)
+    zero_crossings = np.sum(np.diff(np.sign(x)) != 0) / len(x)
+
+    # Signal variance (overall power)
+    variance = np.var(x)
+
+    return {
+        'hjorth_mobility': hjorth_mobility,
+        'hjorth_complexity': hjorth_complexity,
+        'zero_crossing_rate': zero_crossings,
+        'signal_variance': variance
+    }
+
+
 def extract_features(x: np.ndarray, fs: int):
     feats = calculate_psd_features(x, fs)
     feats.update(calculate_additional_features(x, fs))
+    feats.update(calculate_temporal_features(x))
     return feats
 
 

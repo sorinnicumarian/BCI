@@ -200,9 +200,33 @@ Arduino should:
 cd python_solution
 python3 -m venv .venv
 source .venv/bin/activate
-python3 -m pip install -r requirements.txt                                         
+python3 -m pip install -r requirements.txt
 python3 predict.py
 ```
+
+---
+
+# Dataset Information
+
+The training dataset consists of **3 recording sessions** from a single subject under different conditions:
+
+| Session | Label | Duration | Activity | Details | Music | Eyes |
+|---------|-------|----------|----------|---------|-------|------|
+| 1 | Concentrate | 3 min | Play | Subway Surfers | - | - |
+| 1 | Relax | 5.1 min | Meditate | - | Yes | Closed |
+| 2 | Concentrate | 5 min | Focus | Car Logo game | - | - |
+| 2 | Relax | 5 min | Meditate | - | No | Closed |
+| 3 | Concentrate | 5 min | Play | Subway Surfers | - | - |
+| 3 | Relax | 5 min | Meditate | - | No | Closed |
+
+**Total Recording Time:** ~28 minutes
+**Sampling Rate:** 512 Hz
+**Window Size:** 1 second (512 samples) with 50% overlap
+**Feature Count:** 15 (spectral + temporal features)
+
+The model achieves **77-80% accuracy** using SVM with RBF kernel after proper feature engineering and artifact rejection.
+
+---
 
 # 12. Prediction Feature Statistics (Example)
 ```
