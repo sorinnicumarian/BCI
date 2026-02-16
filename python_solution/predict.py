@@ -1,8 +1,10 @@
 COLS = [
     'E_alpha', 'E_beta', 'E_theta', 'E_delta',
     'alpha_beta_ratio', 'theta_alpha_ratio', 'beta_theta_ratio', 'engagement_index',
+    'beta_percentage',
     'peak_frequency', 'spectral_centroid', 'spectral_slope',
-    'hjorth_mobility', 'hjorth_complexity', 'zero_crossing_rate', 'signal_variance'
+    'hjorth_mobility', 'hjorth_complexity', 'zero_crossing_rate', 'signal_variance',
+    'smoothed_beta', 'smoothed_alpha', 'smoothed_ratio'
 ]
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
@@ -54,8 +56,10 @@ VOTE_LEN = 5             # majority vote length (set to 1 to disable)
 COLS = [
     'E_alpha', 'E_beta', 'E_theta', 'E_delta',
     'alpha_beta_ratio', 'theta_alpha_ratio', 'beta_theta_ratio', 'engagement_index',
+    'beta_percentage',
     'peak_frequency', 'spectral_centroid', 'spectral_slope',
-    'hjorth_mobility', 'hjorth_complexity', 'zero_crossing_rate', 'signal_variance'
+    'hjorth_mobility', 'hjorth_complexity', 'zero_crossing_rate', 'signal_variance',
+    'smoothed_beta', 'smoothed_alpha', 'smoothed_ratio'
 ]
 
 # If your current model.pkl/scaler.pkl were trained on *absolute* bandpowers,
@@ -140,13 +144,17 @@ def calculate_psd_features(x: np.ndarray, fs: int):
     beta_theta_ratio = (E_beta + 1e-12) / (E_theta + 1e-12)
     engagement_index = E_beta / (E_alpha + E_theta + 1e-12)
 
+    # Arduino-inspired: beta as percentage
+    beta_percentage = E_beta * 100.0
+
     return {
         'E_alpha': E_alpha, 'E_beta': E_beta,
         'E_theta': E_theta, 'E_delta': E_delta,
         'alpha_beta_ratio': alpha_beta_ratio,
         'theta_alpha_ratio': theta_alpha_ratio,
         'beta_theta_ratio': beta_theta_ratio,
-        'engagement_index': engagement_index
+        'engagement_index': engagement_index,
+        'beta_percentage': beta_percentage
     }
 
 
@@ -245,6 +253,11 @@ def main():
     # Buffers
     block = deque(maxlen=WIN)
     votes = deque(maxlen=VOTE_LEN)
+
+    # Exponential smoothing state (Arduino-inspired)
+    SMOOTHING_FACTOR = 0.63
+    smoothed_alpha = 0.0
+    smoothed_beta = 0.0
 
     print("[INFO] Streaming... (Ctrl+C to stop)")
     try:
