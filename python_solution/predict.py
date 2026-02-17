@@ -39,9 +39,10 @@ warnings.filterwarnings("ignore", category=UserWarning)
 # -----------------------------
 FS = 512                 # sampling rate (Hz)
 WIN = 512                # 1 s window @ 512 Hz
+STEP = 128               # step size: 128 = 0.25s (4 pred/s FAST), 256 = 0.5s, 512 = 1s
 Z_MAX = 6.0              # z-score gate (artifact rejection) - matches training notebook
 STD_MIN = 1e-3           # flat window guard
-THRESH = 0.25            # decision threshold (0.5 is balanced, use class_weight='balanced' in training)
+THRESH = 0.25           # decision threshold (0.5 is balanced, use class_weight='balanced' in training)
 VOTE_LEN = 1             # majority vote disabled (was 3) - shows raw predictions
 
 # IMPORTANT: must match training feature order exactly
@@ -251,7 +252,11 @@ def main():
     smoothed_alpha = 0.0
     smoothed_beta = 0.0
 
+    # State tracking for continuous key press (racing game optimization)
+    prev_pred = -1  # Track previous prediction to detect state changes
+
     print("[INFO] Streaming... (Ctrl+C to stop)")
+    print("[INFO] Racing mode: Keys stay pressed until state changes")
     sample_count = 0
     try:
         while True:
@@ -264,8 +269,8 @@ def main():
                 continue
 
             sample_count += 1
-            # Debug: print every 100th sample
-            if sample_count % 100 == 0:
+            # Debug: print every 512th sample (less spam with faster predictions)
+            if sample_count % 512 == 0:
                 print(f"[DEBUG] Received {sample_count} samples, latest: {v:.1f}, buffer: {len(block)}/512")
 
             block.append(v)
@@ -287,7 +292,7 @@ def main():
                 block.clear()
                 continue
 
-            print(f"[DEBUG] Processing window: std={std:.2f}, zmax={zmax:.2f}")
+            # print(f"[DEBUG] Processing window: std={std:.2f}, zmax={zmax:.2f}")  # Commented: too spammy at 2 Hz
 
             # Filters
             x = process_block(x, b_notch, a_notch, sos_bp)
@@ -336,17 +341,40 @@ def main():
                 print(f"E_alpha={feats['E_alpha']:.3f} E_beta={feats['E_beta']:.3f} "
                       f"ratio={feats['alpha_beta_ratio']:.3f} | pred={pred}")
 
-            # Optional keystroke (macOS: allow Accessibility)
-            if HAVE_PYAUTOGUI:
-                key = 'w' if pred == 1 else 'space'
-                pyautogui.keyDown(key)
-                time.sleep(0.2)
-                pyautogui.keyUp(key)
+            # Racing game optimization: Hold keys continuously, only change on state transition
+            if HAVE_PYAUTOGUI and pred != prev_pred:
+                # Release previous key if it was pressed
+                if prev_pred == 1:
+                    pyautogui.keyUp('w')
+                elif prev_pred == 0:
+                    pyautogui.keyUp('space')
 
-            block.clear()  # non-overlapping 1 s windows; remove if you later want overlap
+                # Press new key
+                if pred == 1:
+                    pyautogui.keyDown('w')
+                    print("[CTRL] Holding W (accelerating)")
+                else:
+                    pyautogui.keyDown('space')
+                    print("[CTRL] Holding SPACE (braking)")
+
+                prev_pred = pred
+
+            # Sliding window: remove STEP samples for overlap
+            # STEP=256 → prediction every 0.5s, STEP=512 → every 1s
+            for _ in range(min(STEP, len(block))):
+                block.popleft()
     except KeyboardInterrupt:
         print("\n[INFO] Stopped by user.")
     finally:
+        # Release any held keys on exit
+        if HAVE_PYAUTOGUI:
+            try:
+                pyautogui.keyUp('w')
+                pyautogui.keyUp('space')
+                print("[INFO] Released all keys.")
+            except Exception:
+                pass
+
         try:
             ser.close()
             print("[INFO] Serial closed.")
