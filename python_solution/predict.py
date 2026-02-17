@@ -41,8 +41,8 @@ FS = 512                 # sampling rate (Hz)
 WIN = 512                # 1 s window @ 512 Hz
 Z_MAX = 6.0              # z-score gate (artifact rejection) - matches training notebook
 STD_MIN = 1e-3           # flat window guard
-THRESH = 0.50            # decision threshold on predicted class prob (0.5 is balanced)
-VOTE_LEN = 3             # majority vote length (faster than 5, set to 1 to disable)
+THRESH = 0.25            # decision threshold (0.5 is balanced, use class_weight='balanced' in training)
+VOTE_LEN = 1             # majority vote disabled (was 3) - shows raw predictions
 
 # IMPORTANT: must match training feature order exactly
 COLS = [

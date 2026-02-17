@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/Users/sorin/Documents/Repos/BCI/python_solution/.venv/bin/python
 import sys
 import csv
 import time
