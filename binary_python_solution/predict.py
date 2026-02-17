@@ -270,8 +270,8 @@ def main():
 
             sample_count += 1
             # Debug: print every 512th sample (less spam with faster predictions)
-            # if sample_count % 512 == 0:
-                # print(f"[DEBUG] Received {sample_count} samples, latest: {v:.1f}, buffer: {len(block)}/512")
+            if sample_count % 512 == 0:
+                print(f"[DEBUG] Received {sample_count} samples, latest: {v:.1f}, buffer: {len(block)}/512")
 
             block.append(v)
             if len(block) < WIN:
@@ -283,16 +283,16 @@ def main():
             # Artifact rejection BEFORE filtering
             std = x.std()
             if std < STD_MIN:
-                # print(f"[DEBUG] Rejected: std too low ({std:.6f})")
+                print(f"[DEBUG] Rejected: std too low ({std:.6f})")
                 block.clear()
                 continue
             zmax = np.max(np.abs((x - x.mean()) / (std + 1e-9)))
             if zmax > Z_MAX:
-                # print(f"[DEBUG] Rejected: z-score too high ({zmax:.2f})")
+                print(f"[DEBUG] Rejected: z-score too high ({zmax:.2f})")
                 block.clear()
                 continue
 
-            # print(f"[DEBUG] Processing window: std={std:.2f}, zmax={zmax:.2f}")  # Commented: too spammy at 2 Hz
+            print(f"[DEBUG] Processing window: std={std:.2f}, zmax={zmax:.2f}")  # Commented: too spammy at 2 Hz
 
             x = process_block(x, b_notch, a_notch, sos_bp)
 

@@ -53,11 +53,12 @@ Sampling rate: **512 Hz** (Arduino configured with `SAMPLE_RATE 512`)
 
 ---
 
-### Dataset 05 ✓ **CURRENT - 4-CLASS MOUSE CONTROL**
+### Dataset 05 ✓ **CURRENT - 5-CLASS EVALUATION → BEST 4**
 
 **Collection Date**: February 17-18, 2025
 **Electrode Placement**: [Document your specific placement]
 **Hardware**: Arduino UNO R4 + BioAmp EXG Pill
+**Strategy**: Train on 5 classes, select best 4 performers for deployment
 
 #### 05_relax.csv
 - **Duration**: 5 minutes
@@ -79,28 +80,40 @@ Sampling rate: **512 Hz** (Arduino configured with `SAMPLE_RATE 512`)
 
 #### 05_left_fist_pulse.csv
 - **Duration**: 5 minutes
-- **Mental State**: Visual focus on football
+- **Mental State**: Motor imagery + visual focus
 - **Conditions**:
-  - Eyes OPEN
-  - Watched **football** (specific visual target)
+  - Eyes OPEN (or closed)
+  - Imagine pulsing LEFT FIST
+  - Watched **football** (visual anchor)
   - Pulse attention pattern
   - Associated with LEFT cursor movement
 
-#### 05_right_fist_clench.csv
+#### 05_jaw_clench.csv
 - **Duration**: 5 minutes
-- **Mental State**: Visual focus on star
+- **Mental State**: Jaw muscle activation + emotion
 - **Conditions**:
-  - Eyes OPEN
-  - Watched **star** (specific visual target)
-  - Sustained attention
-  - Associated with RIGHT cursor movement
+  - Eyes OPEN (or closed)
+  - **Actually clench/pulse JAW muscles** rhythmically (~2 Hz)
+  - Feel: tension, anger, heat (emotional component)
+  - Strong EMG artifacts (intentional!)
+  - Perry Kayal-inspired intensity
 
-**Why Dataset 05 (4-Class) Works:**
-- All states with **eyes OPEN** (consistent baseline)
-- **Visual targets** instead of motor imagery (more reliable with single channel)
-- **Pulse patterns** add temporal variation
-- Specific focus objects (football, star) create distinct brain states
-- Matches mouse control deployment: UP, DOWN, LEFT, RIGHT
+#### 05_count_backwards.csv
+- **Duration**: 5 minutes
+- **Mental State**: Mental arithmetic (high cognitive load)
+- **Conditions**:
+  - Eyes CLOSED (or open)
+  - Count backwards from 1000 by 7s: 1000, 993, 986, 979...
+  - Active calculation, no breaks
+  - High beta activity expected
+  - Keep counting entire duration
+
+**Why Dataset 05 (5→4 Class Evaluation) Works:**
+- **Multi-modal approach**: visual, motor, cognitive, emotional states
+- **Perry Kayal-inspired**: layered mental states (motor + emotion + micro-movements)
+- **EMG as feature**: jaw clench creates strong, distinct signal
+- **Cognitive load**: mental math produces strong beta waves
+- **Strategy**: Train on all 5, drop worst performer, deploy best 4
 
 ---
 

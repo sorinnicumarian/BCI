@@ -1,19 +1,19 @@
 #!/Users/sorin/Documents/Repos/BCI/python_solution/.venv/bin/python
 # -*- coding: utf-8 -*-
 """
-Real-time EEG 4-Class Mouse Control (UNO R4 + BioAmp)
+Real-time EEG 3-Class Mouse Control (UNO R4 + BioAmp)
 
-Classes:
-0 = Rest (stop cursor)
-1 = Focus (move forward / click)
-2 = Left Fist Imagery (move cursor LEFT)
-3 = Right Fist Imagery (move cursor RIGHT)
+Classes (Best 3 from 5-class evaluation):
+0 = Relax/Down (move cursor DOWN)
+1 = Focus/Up (move cursor UP)
+2 = Jaw Clench (move cursor LEFT) - Perry-inspired with EMG
 
 Features:
-- 4-class SVM classification
+- 3-class SVM classification (dropped Left Fist 49.2%, Count Backwards 53.8%)
 - Fast predictions (4 Hz, STEP=128)
-- Smooth mouse movement
-- Motor imagery support
+- Confidence threshold (0.50) for REST state
+- UP boost (1.3x) for better detection
+- Expected accuracy: 65-75%
 """
 
 import os
@@ -47,9 +47,11 @@ Z_MAX = 6.0              # z-score gate (artifact rejection) - matches training 
 STD_MIN = 1e-3           # flat window guard
 VOTE_LEN = 1             # majority vote disabled - raw predictions for fast response
 
-# Mouse Control Settings (4-class)
-MOUSE_SPEED = 15         # pixels per prediction for left/right movement
-MOUSE_UP_SPEED = 10      # pixels per prediction for forward movement
+# Mouse Control Settings (3-class)
+MOUSE_SPEED = 15         # pixels per prediction for left movement
+MOUSE_UP_SPEED = 10      # pixels per prediction for up/down movement
+CONFIDENCE_THRESHOLD = 0.50  # min confidence to move cursor (below = REST/stay)
+UP_BOOST_FACTOR = 1.3    # boost UP class probability (1.0 = no boost, 1.3 = 30% boost)
 
 # IMPORTANT: must match training feature order exactly
 COLS = [
@@ -259,7 +261,7 @@ def main():
     smoothed_beta = 0.0
 
     print("[INFO] Streaming... (Ctrl+C to stop)")
-    print("[INFO] 4-Class Mouse Control: REST / FOCUS↑ / LEFT← / RIGHT→")
+    print("[INFO] 3-Class Mouse Control: DOWN↓ / UP↑ / JAW←")
     sample_count = 0
     try:
         while True:
@@ -329,8 +331,21 @@ def main():
             # Get probabilities for diagnostics
             if hasattr(clf, "predict_proba"):
                 probas = clf.predict_proba(X_scaled)[0]
+
+                # Boost UP class (index 1) to improve detection
+                boosted_probas = probas.copy()
+                boosted_probas[1] *= UP_BOOST_FACTOR  # boost UP/FOCUS
+                # Renormalize so probabilities sum to 1.0
+                boosted_probas /= boosted_probas.sum()
+
+                # Re-predict based on boosted probabilities
+                pred = int(np.argmax(boosted_probas))
+
+                # Check confidence threshold for REST state
+                max_confidence = boosted_probas[pred]
             else:
                 probas = None
+                max_confidence = 1.0  # no confidence info, assume confident
 
             # Optional smoothing via majority vote
             votes.append(pred)
@@ -339,30 +354,31 @@ def main():
                 pred = max(set(votes), key=votes.count)
 
             # Print diagnostics
-            class_names = ['REST', 'FOCUS', 'LEFT', 'RIGHT']
+            class_names = ['DOWN', 'UP', 'JAW']
             if probas is not None:
-                proba_str = " ".join([f"{class_names[i]}:{probas[i]:.2f}" for i in range(len(probas))])
-                print(f"{proba_str} | pred={class_names[pred]}")
+                # Show boosted probabilities (what the system actually uses)
+                proba_str = " ".join([f"{class_names[i]}:{boosted_probas[i]:.2f}" for i in range(len(boosted_probas))])
+                print(f"{proba_str} | pred={class_names[pred]} (conf={max_confidence:.2f})")
             else:
                 print(f"pred={class_names[pred]}")
 
-            # 4-class mouse control
+            # 3-class mouse control with confidence threshold
             if HAVE_PYAUTOGUI:
-                if pred == 0:
-                    # REST - stop cursor (do nothing)
-                    pass
+                if max_confidence < CONFIDENCE_THRESHOLD:
+                    # Low confidence - REST (don't move cursor)
+                    print("[MOUSE] ⏸ REST (low confidence)")
+                elif pred == 0:
+                    # DOWN/RELAX - move cursor DOWN
+                    pyautogui.move(0, MOUSE_UP_SPEED, duration=0)
+                    print("[MOUSE] ↓ DOWN")
                 elif pred == 1:
-                    # FOCUS - move cursor UP/FORWARD
+                    # UP/FOCUS - move cursor UP
                     pyautogui.move(0, -MOUSE_UP_SPEED, duration=0)
                     print("[MOUSE] ↑ UP")
                 elif pred == 2:
-                    # LEFT FIST - move cursor LEFT
+                    # JAW CLENCH - move cursor LEFT (Perry-inspired EMG signal)
                     pyautogui.move(-MOUSE_SPEED, 0, duration=0)
-                    print("[MOUSE] ← LEFT")
-                elif pred == 3:
-                    # RIGHT FIST - move cursor RIGHT
-                    pyautogui.move(MOUSE_SPEED, 0, duration=0)
-                    print("[MOUSE] → RIGHT")
+                    print("[MOUSE] ← JAW CLENCH")
 
             # Sliding window: remove STEP samples for overlap
             # STEP=256 → prediction every 0.5s, STEP=512 → every 1s
