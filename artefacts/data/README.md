@@ -53,6 +53,57 @@ Sampling rate: **512 Hz** (Arduino configured with `SAMPLE_RATE 512`)
 
 ---
 
+### Dataset 05 ✓ **CURRENT - 4-CLASS MOUSE CONTROL**
+
+**Collection Date**: February 17-18, 2025
+**Electrode Placement**: [Document your specific placement]
+**Hardware**: Arduino UNO R4 + BioAmp EXG Pill
+
+#### 05_relax.csv
+- **Duration**: 5 minutes
+- **Mental State**: Pulse relaxation
+- **Conditions**:
+  - Eyes OPEN
+  - Pulse relax state
+  - Imagine mouse cursor moving DOWN
+  - Relaxed but not sleeping
+
+#### 05_concentrate.csv
+- **Duration**: 5 minutes
+- **Mental State**: Pulse focus
+- **Conditions**:
+  - Eyes OPEN
+  - Pulse focus/concentration
+  - Imagine mouse cursor moving UP
+  - Sustained intense focus
+
+#### 05_left_fist_pulse.csv
+- **Duration**: 5 minutes
+- **Mental State**: Visual focus on football
+- **Conditions**:
+  - Eyes OPEN
+  - Watched **football** (specific visual target)
+  - Pulse attention pattern
+  - Associated with LEFT cursor movement
+
+#### 05_right_fist_clench.csv
+- **Duration**: 5 minutes
+- **Mental State**: Visual focus on star
+- **Conditions**:
+  - Eyes OPEN
+  - Watched **star** (specific visual target)
+  - Sustained attention
+  - Associated with RIGHT cursor movement
+
+**Why Dataset 05 (4-Class) Works:**
+- All states with **eyes OPEN** (consistent baseline)
+- **Visual targets** instead of motor imagery (more reliable with single channel)
+- **Pulse patterns** add temporal variation
+- Specific focus objects (football, star) create distinct brain states
+- Matches mouse control deployment: UP, DOWN, LEFT, RIGHT
+
+---
+
 ## Collection Protocol (for future sessions)
 
 Use `python_solution/collect.py` to record new sessions:

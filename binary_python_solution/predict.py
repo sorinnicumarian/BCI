@@ -42,7 +42,7 @@ WIN = 512                # 1 s window @ 512 Hz
 STEP = 128               # step size: 128 = 0.25s (4 pred/s FAST), 256 = 0.5s, 512 = 1s
 Z_MAX = 6.0              # z-score gate (artifact rejection) - matches training notebook
 STD_MIN = 1e-3           # flat window guard
-THRESH = 0.25           # decision threshold (0.5 is balanced, use class_weight='balanced' in training)
+THRESH = 0.1           # decision threshold (0.5 is balanced, use class_weight='balanced' in training)
 VOTE_LEN = 1             # majority vote disabled (was 3) - shows raw predictions
 
 # IMPORTANT: must match training feature order exactly
@@ -270,8 +270,8 @@ def main():
 
             sample_count += 1
             # Debug: print every 512th sample (less spam with faster predictions)
-            if sample_count % 512 == 0:
-                print(f"[DEBUG] Received {sample_count} samples, latest: {v:.1f}, buffer: {len(block)}/512")
+            # if sample_count % 512 == 0:
+                # print(f"[DEBUG] Received {sample_count} samples, latest: {v:.1f}, buffer: {len(block)}/512")
 
             block.append(v)
             if len(block) < WIN:
@@ -283,79 +283,59 @@ def main():
             # Artifact rejection BEFORE filtering
             std = x.std()
             if std < STD_MIN:
-                print(f"[DEBUG] Rejected: std too low ({std:.6f})")
+                # print(f"[DEBUG] Rejected: std too low ({std:.6f})")
                 block.clear()
                 continue
             zmax = np.max(np.abs((x - x.mean()) / (std + 1e-9)))
             if zmax > Z_MAX:
-                print(f"[DEBUG] Rejected: z-score too high ({zmax:.2f})")
+                # print(f"[DEBUG] Rejected: z-score too high ({zmax:.2f})")
                 block.clear()
                 continue
 
             # print(f"[DEBUG] Processing window: std={std:.2f}, zmax={zmax:.2f}")  # Commented: too spammy at 2 Hz
 
-            # Filters
             x = process_block(x, b_notch, a_notch, sos_bp)
 
-            # Features
             feats = extract_features(x, FS)
 
-            # Apply exponential smoothing (Arduino-inspired)
             smoothed_alpha = SMOOTHING_FACTOR * feats['E_alpha'] + (1 - SMOOTHING_FACTOR) * smoothed_alpha
             smoothed_beta = SMOOTHING_FACTOR * feats['E_beta'] + (1 - SMOOTHING_FACTOR) * smoothed_beta
             smoothed_ratio = (smoothed_alpha + 1e-12) / (smoothed_beta + 1e-12)
 
-            # Add smoothed features to the feature dictionary
             feats['smoothed_alpha'] = smoothed_alpha
             feats['smoothed_beta'] = smoothed_beta
             feats['smoothed_ratio'] = smoothed_ratio
 
-            # Enforce training column order EXACTLY
             df = pd.DataFrame([feats])[COLS]
 
-            # Sanity: verify scaler expects correct number of features
             assert hasattr(scaler, "mean_") and scaler.mean_.shape[0] == len(COLS), \
                 f"Scaler expects {scaler.mean_.shape[0]} features, but live has {len(COLS)}"
 
-            # Scale features
             X_scaled = scaler.transform(df)
 
-            # Predict using probabilities + threshold
             if hasattr(clf, "predict_proba"):
                 proba1 = float(clf.predict_proba(X_scaled)[0, 1])
                 pred = int(proba1 >= THRESH)
             else:
-                # Fallback to binary prediction
                 pred = int(clf.predict(X_scaled)[0])
 
-            # Optional smoothing via majority vote
             votes.append(pred)
             if VOTE_LEN > 1:
                 pred = int(sum(votes) >= (VOTE_LEN // 2 + 1))
 
-            # Print diagnostics
-            if hasattr(clf, "predict_proba"):
-                print(f"E_alpha={feats['E_alpha']:.3f} E_beta={feats['E_beta']:.3f} "
-                      f"ratio={feats['alpha_beta_ratio']:.3f} | p_focus={proba1:.3f} pred={pred}")
-            else:
-                print(f"E_alpha={feats['E_alpha']:.3f} E_beta={feats['E_beta']:.3f} "
-                      f"ratio={feats['alpha_beta_ratio']:.3f} | pred={pred}")
-
-            # Racing game optimization: Hold keys continuously, only change on state transition
+            # Only print on state change
             if HAVE_PYAUTOGUI and pred != prev_pred:
-                # Release previous key if it was pressed
                 if prev_pred == 1:
                     pyautogui.keyUp('w')
                 elif prev_pred == 0:
                     pyautogui.keyUp('space')
 
-                # Press new key
                 if pred == 1:
                     pyautogui.keyDown('w')
-                    print("[CTRL] Holding W (accelerating)")
+                    print("Concentrate -> Accelerate -> Pressing W")
                 else:
                     pyautogui.keyDown('space')
-                    print("[CTRL] Holding SPACE (braking)")
+                    print("Relax -> Brake -> Pressing Space")
 
                 prev_pred = pred
 
