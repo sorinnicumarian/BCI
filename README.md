@@ -529,4 +529,101 @@ spectral_slope     mean: -10.79
 This project is licensed under the MIT License.
 
 # Experience
+## Improvement ideas
+1. Increase the mouse speed in the detected direction with a multiple of the confidence of the detection.
+2. Add blink twice for click
 
+Solution: Dual-path detection - 
+Path 1: Blink detector (runs BEFORE ML)
+if detect_double_blink(raw_signal):
+    return CLASS_CLICK
+Path 2: ML classifier (runs on clean signal)
+else:
+    # Your current ML pipeline
+    return predict_mental_state()
+
+## Implementation Decisions
+1. Linear test with 1/3 sensors works fine for binary classification.
+2. Double and triple blink with 1/3 sensors are really easy to detect, but they are EOG, not suited for tethraparesis or paralized pacients. Can be very useful in many cases.
+3. Binary Classification with GridSearchCV got to 92% accuracy which is really nice. But still linear probably beats it live.
+
+4. Find more different thoughts for more different classes? I would really like to have 4 classes.
+
+Verdict: NOT RECOMMENDED for 90% target
+
+The harsh reality of single-channel EEG:
+Number of Classes	Typical Accuracy (single-channel)
+2 classes	75-85% ✓ Good
+3 classes	65-75% ✓ Current best 70.2%
+4 classes	55-65% ⚠️ Hard
+5 classes	45-60% ❌ Very hard (your 56.7%)
+Why it gets harder:
+
+Information Theory: I = log₂(N) bits
+
+2 classes → 1 bit of information
+3 classes → 1.58 bits
+4 classes → 2 bits
+5 classes → 2.32 bits
+
+But single-channel EEG has ~1.5-2 bits of reliable information!
+You're hitting the Shannon limit of your hardware.
+
+Exception: If you find states that are physically different (like blinks, jaw clench with EMG), not just "mental" differences, you can bypass this limit.
+
+3. Add linear live detection from 08 for focus and relax here, and focus the ML on 2 other classes. + linear detection of the 2 blink for click. In the end, it is 5 classes.
+
+Decision cascade (top-to-bottom priority)
+
+1. BLINK DETECTOR (linear, amplitude threshold)
+   ├─ Double blink detected? → CLICK
+   └─ No blink → continue
+
+2. FOCUS/RELAX DETECTOR (linear, alpha/beta ratio from dataset 08)
+   ├─ Alpha/beta > 1.5? → RELAX
+   ├─ Alpha/beta < 0.7? → FOCUS
+   └─ Uncertain → continue
+
+3. ML CLASSIFIER (trained on 2 complex states)
+   ├─ Predict: JAW CLENCH
+   └─ Predict: [NEW MENTAL STATE]
+
+Real-world example:
+Emotiv, Muse, NeuroSky all use hybrid approaches
+OpenBCI tutorials recommend linear for relaxation/focus
+Research papers: "Hybrid BCI systems show 15-20% accuracy improvement" (Pfurtscheller et al.)
+
+
+4. Option 4: Stick to ML Only
+Verdict: POSSIBLE, but requires more time than you have
+
+To reach 90% with pure ML, you need:
+More training data (10-15 min per class, not 5 min)
+Better electrode placement (motor cortex for motor imagery)
+Session-specific calibration (retrain before each use)
+Advanced features (wavelet transforms, CSP filters)
+Ensemble methods (combine multiple classifiers)
+Timeline: 2-3 weeks of experimentation. You have 1 week.
+
+# Presentation
+1. Reason - Why do we code? There might be a few reasons why most developers code - 
+1.1 the fun of it, the sake of the art, the sake of the research. 
+1.2 And the other one is helping people. Enjoying when someone uses our applications, clicks our buttons and hate when testers misuse our code.
+1.3 Freedom or family
+1.4 Comfort
+There is nothing wrong with any of them. But realising this helps you find your why (as Simon says ;).I would really like you to put this question to yourself too. Why do you code?
+2. Why am I coding? What is a job I want? I code to help people. But sometimes it is so fun to push the performance or coding standard improvements so much, even in nobody sees. Just for me. Just for the sake of art. But the main reason, is still, people. If really nobody would use that code, not even me, then I would not code.
+3. So here is a big reason I have started this project. Helping people. With current technology we have immense capabilities of helping people. So, this is Palika. He's a friend of mine, a really smart individual who is so stubborn to code that despite his shortcomings he is managing to do it. Because what else is there for him? Since the real life is so limited for him, he has a huge virtual world he can explore. It's just pretty slow for him now. He has spastic tetraparesys. That means his muscles contract involuntarily. This can vary from pacient to pacient.
+
+4. He has pretty good control of his eyes, and Tobii provides a pretty good tool for him to explore the virtual world. But I would really like to help him gain speed and with him, help thousands of other people.
+5. So randomly I saw a streamer, Peri Kayal, who finished one of the hardest games in the past 10 years, Elden Ring, with "her mind". Thought it was click bait, and some would argue it kind of is. She used Tobii eye tracking for character movement and an Emotiv BCI device to train 4 states for 4 controls. Like the X Y A B on a controller. But that's expensive. 1500€ as a starting price and then a 150€/month subscription. I do not think it is a reasonable price. 
+
+6. That's when I started searching and found Upside Down Labs. A company from India with outstanding results. With an 150€ kit containing an Arduino, 3 EEG sensors (1 channel) and a driver to convert the signals, it seems a very reasonable price. And I got to work.
+
+7. Explain EEG, brainwaves differences, brainwaves data collection, filtering.
+
+8. Implementation Decisions
+
+9. Current Solution. Demo
+
+10. Because, as Simon says, the biggest pride is to serve the ones who serve others. And how proud would I be if we could help somebody with such an inconvenient start to serve us. To make him capable of serving others and feel proud. That seems a worthy goal for me. Got your attention? Please reach out if you want to contribute.
