@@ -51,7 +51,10 @@ VOTE_LEN = 1             # majority vote disabled - raw predictions for fast res
 MOUSE_SPEED = 15         # pixels per prediction for left movement
 MOUSE_UP_SPEED = 10      # pixels per prediction for up/down movement
 CONFIDENCE_THRESHOLD = 0.50  # min confidence to move cursor (below = REST/stay)
-UP_BOOST_FACTOR = 1.3    # boost UP class probability (1.0 = no boost, 1.3 = 30% boost)
+
+# Per-class probability boost factors [DOWN, UP, JAW]
+CLASS_BOOST_FACTORS = [1.0, 1.6, 0.54]  
+# DOWN=1.0 (no change), UP=1.5 (50% boost), JAW=0.8 (20% reduction)
 
 # IMPORTANT: must match training feature order exactly
 COLS = [
@@ -332,9 +335,10 @@ def main():
             if hasattr(clf, "predict_proba"):
                 probas = clf.predict_proba(X_scaled)[0]
 
-                # Boost UP class (index 1) to improve detection
+                # Apply per-class boost factors [DOWN=1.0, UP=1.5, JAW=0.8]
                 boosted_probas = probas.copy()
-                boosted_probas[1] *= UP_BOOST_FACTOR  # boost UP/FOCUS
+                for i in range(len(boosted_probas)):
+                    boosted_probas[i] *= CLASS_BOOST_FACTORS[i]
                 # Renormalize so probabilities sum to 1.0
                 boosted_probas /= boosted_probas.sum()
 
