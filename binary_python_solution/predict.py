@@ -1,19 +1,16 @@
 #!/Users/sorin/Documents/Repos/BCI/python_solution/.venv/bin/python
 # -*- coding: utf-8 -*-
 """
-Real-time EEG 4-Class Mouse Control (UNO R4 + BioAmp)
+Real-time EEG predictor (UNO R4 + BioAmp) using model.pkl + scaler.pkl
 
-Classes:
-0 = Rest (stop cursor)
-1 = Focus (move forward / click)
-2 = Left Fist Imagery (move cursor LEFT)
-3 = Right Fist Imagery (move cursor RIGHT)
-
-Features:
-- 4-class SVM classification
-- Fast predictions (4 Hz, STEP=128)
-- Smooth mouse movement
-- Motor imagery support
+Fixes:
+- Proper 50 Hz notch (Hz + Q=30, fs=512)
+- Stable 0.5–30 Hz band-pass (SOS + sosfiltfilt)
+- 1 s windows (512 samples) + artifact rejection BEFORE filtering
+- Safe feature computation (peak in 0.5–30 Hz, slope in 2–30 Hz)
+- Enforce column order before scaler.transform to avoid mis-mapping
+- Robust serial port picker (prefer /dev/cu.usbmodem*, avoid debug console)
+- Optional majority voting for flicker-free control
 """
 
 import os
@@ -45,11 +42,8 @@ WIN = 512                # 1 s window @ 512 Hz
 STEP = 128               # step size: 128 = 0.25s (4 pred/s FAST), 256 = 0.5s, 512 = 1s
 Z_MAX = 6.0              # z-score gate (artifact rejection) - matches training notebook
 STD_MIN = 1e-3           # flat window guard
-VOTE_LEN = 1             # majority vote disabled - raw predictions for fast response
-
-# Mouse Control Settings (4-class)
-MOUSE_SPEED = 15         # pixels per prediction for left/right movement
-MOUSE_UP_SPEED = 10      # pixels per prediction for forward movement
+THRESH = 0.25           # decision threshold (0.5 is balanced, use class_weight='balanced' in training)
+VOTE_LEN = 1             # majority vote disabled (was 3) - shows raw predictions
 
 # IMPORTANT: must match training feature order exactly
 COLS = [
@@ -258,8 +252,11 @@ def main():
     smoothed_alpha = 0.0
     smoothed_beta = 0.0
 
+    # State tracking for continuous key press (racing game optimization)
+    prev_pred = -1  # Track previous prediction to detect state changes
+
     print("[INFO] Streaming... (Ctrl+C to stop)")
-    print("[INFO] 4-Class Mouse Control: REST / FOCUS↑ / LEFT← / RIGHT→")
+    print("[INFO] Racing mode: Keys stay pressed until state changes")
     sample_count = 0
     try:
         while True:
@@ -323,46 +320,44 @@ def main():
             # Scale features
             X_scaled = scaler.transform(df)
 
-            # 4-class prediction
-            pred = int(clf.predict(X_scaled)[0])
-
-            # Get probabilities for diagnostics
+            # Predict using probabilities + threshold
             if hasattr(clf, "predict_proba"):
-                probas = clf.predict_proba(X_scaled)[0]
+                proba1 = float(clf.predict_proba(X_scaled)[0, 1])
+                pred = int(proba1 >= THRESH)
             else:
-                probas = None
+                # Fallback to binary prediction
+                pred = int(clf.predict(X_scaled)[0])
 
             # Optional smoothing via majority vote
             votes.append(pred)
             if VOTE_LEN > 1:
-                # For multi-class, use most common value
-                pred = max(set(votes), key=votes.count)
+                pred = int(sum(votes) >= (VOTE_LEN // 2 + 1))
 
             # Print diagnostics
-            class_names = ['REST', 'FOCUS', 'LEFT', 'RIGHT']
-            if probas is not None:
-                proba_str = " ".join([f"{class_names[i]}:{probas[i]:.2f}" for i in range(len(probas))])
-                print(f"{proba_str} | pred={class_names[pred]}")
+            if hasattr(clf, "predict_proba"):
+                print(f"E_alpha={feats['E_alpha']:.3f} E_beta={feats['E_beta']:.3f} "
+                      f"ratio={feats['alpha_beta_ratio']:.3f} | p_focus={proba1:.3f} pred={pred}")
             else:
-                print(f"pred={class_names[pred]}")
+                print(f"E_alpha={feats['E_alpha']:.3f} E_beta={feats['E_beta']:.3f} "
+                      f"ratio={feats['alpha_beta_ratio']:.3f} | pred={pred}")
 
-            # 4-class mouse control
-            if HAVE_PYAUTOGUI:
-                if pred == 0:
-                    # REST - stop cursor (do nothing)
-                    pass
-                elif pred == 1:
-                    # FOCUS - move cursor UP/FORWARD
-                    pyautogui.move(0, -MOUSE_UP_SPEED, duration=0)
-                    print("[MOUSE] ↑ UP")
-                elif pred == 2:
-                    # LEFT FIST - move cursor LEFT
-                    pyautogui.move(-MOUSE_SPEED, 0, duration=0)
-                    print("[MOUSE] ← LEFT")
-                elif pred == 3:
-                    # RIGHT FIST - move cursor RIGHT
-                    pyautogui.move(MOUSE_SPEED, 0, duration=0)
-                    print("[MOUSE] → RIGHT")
+            # Racing game optimization: Hold keys continuously, only change on state transition
+            if HAVE_PYAUTOGUI and pred != prev_pred:
+                # Release previous key if it was pressed
+                if prev_pred == 1:
+                    pyautogui.keyUp('w')
+                elif prev_pred == 0:
+                    pyautogui.keyUp('space')
+
+                # Press new key
+                if pred == 1:
+                    pyautogui.keyDown('w')
+                    print("[CTRL] Holding W (accelerating)")
+                else:
+                    pyautogui.keyDown('space')
+                    print("[CTRL] Holding SPACE (braking)")
+
+                prev_pred = pred
 
             # Sliding window: remove STEP samples for overlap
             # STEP=256 → prediction every 0.5s, STEP=512 → every 1s
@@ -371,6 +366,15 @@ def main():
     except KeyboardInterrupt:
         print("\n[INFO] Stopped by user.")
     finally:
+        # Release any held keys on exit
+        if HAVE_PYAUTOGUI:
+            try:
+                pyautogui.keyUp('w')
+                pyautogui.keyUp('space')
+                print("[INFO] Released all keys.")
+            except Exception:
+                pass
+
         try:
             ser.close()
             print("[INFO] Serial closed.")
