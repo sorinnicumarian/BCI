@@ -30,3 +30,7 @@ build/
 # *.pkl
 # *.csv
 # *.h5
+.DS_Store
+artefacts/.DS_Store
+notebook/.DS_Store
+python_solution/.DS_Store
