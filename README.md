@@ -1,532 +1,419 @@
 
-# Brain–Computer Interface (BCI) – EEG Attention & Relaxation Detection
+# Brain–Computer Interface (BCI) – 4-Class EEG+EOG Mouse Control
+
+## Quick Start
+```bash
+cd python_solution
+./collect.py <state_name> [seconds]   # collect data
+./predict.py                          # run live prediction
+```
+
+---
 
 ## Table of Contents
-1. **Introduction**
-2. **Abbreviations & Core Concepts**
-   - 2.1 FFT (Fast Fourier Transform)
-   - 2.2 PSD (Power Spectral Density)
-3. **Project Context: What This BCI Does**
-4. **How EEG Signals Work (Simple Explanation)**
-5. **EEG Frequency Bands & Mental States**
-6. **Why the Alpha/Beta Ratio Matters**
-7. **Machine Learning: SVM Explained Simply**
-8. **End‑to‑End BCI Pipeline (Game Control Flow)**
-9. **Arduino Hardware Setup**
-10. **Arduino Software Setup**
-11. **Arduino Test Procedures**
-    - 11.1 Test 1.0 – Board Functionality
-    - 11.2 Test 1.1 – Sensor Reading
-    - 11.3 Test 1.2 – EEG Filtering Verification
-    - 11.4 Test 1.3 – FFT & Band Percentage Output
-12. **Prediction Feature Statistics (Model Input)**
-13. **Interpreting the Feature Statistics**
-14. **License**
+1. [Project Goal](#1-project-goal)
+2. [Hardware Setup](#2-hardware-setup)
+3. [Electrode Placement History](#3-electrode-placement-history)
+4. [4-Class System Architecture](#4-4-class-system-architecture)
+5. [Dataset History & Accuracy](#5-dataset-history--accuracy)
+6. [Scripts Reference](#6-scripts-reference)
+7. [Signal Quality Guide](#7-signal-quality-guide)
+8. [EEG/EOG Background](#8-eegeog-background)
+9. [Machine Learning Approach](#9-machine-learning-approach)
+10. [License](#10-license)
 
 ---
 
-# 1. Introduction
-This repository contains a functional **Brain–Computer Interface (BCI)** built using:
-- **BioAmp EXG Pill** (EEG acquisition)
-- **Arduino UNO R4** (signal preprocessing and streaming)
-- **Python (FFT, PSD, SVM)** (feature extraction & classification)
+# 1. Project Goal
 
-The system classifies two mental states:
-- **Focus / Attention** → Beta activity increases
-- **Relaxation / Calmness** → Alpha activity increases
+Mouse control for **tetraparesis patients** (4-limb paralysis) using a single EEG/EOG channel.
 
-The classifier output is used to control a **car game** without physical input.
+Four mental states → four mouse directions:
 
----
+| State | Mental Task | Eye Movement | Mouse |
+|-------|------------|--------------|-------|
+| **RelaxUp** | Relax / blank mind | Look up (sustained) | ↑ Up |
+| **FocusDown** | Count backwards | Look down (sustained) | ↓ Down |
+| **CBRight** | Count backwards | Glance right repeatedly | → Right |
+| **SingLeft** | Sing mentally | Glance left repeatedly | ← Left |
 
-# 2. Abbreviations & Core Concepts
-## 2.1 FFT — Fast Fourier Transform
-FFT answers the question:
-> "Instead of showing me the signal in time, show me how much of each frequency it contains."
-
-Analogy:
-- A music chord is made of multiple notes.
-- FFT tells you which notes are inside.
-
-For EEG:
-- **Alpha = 8–13 Hz** (relaxed)
-- **Beta = 13–30 Hz** (focused)
-
-## 2.2 PSD — Power Spectral Density
-FFT shows *which* frequencies exist.  
-PSD shows *how strong* each frequency is.
-
-Analogy:
-- FFT → notes in a song
-- PSD → loudness of each note
-
-This helps answer:
-- "Is alpha strong?" → relaxation
-- "Is beta strong?" → concentration
+**Double blink → Left Click**
 
 ---
 
-# 3. Project Context
-This BCI demonstrates how EEG signals can be used to:
-- Detect **attentive** vs **relaxed** mental states
-- Control a game **hands‑free**
-- Provide real‑time neurofeedback
+# 2. Hardware Setup
 
+- **Arduino UNO R4** — samples at 512 Hz, streams raw ADC via USB serial
+- **BioAmp EXG Pill** — single-channel differential amplifier
+- **Sketch:** `arduino_solution/signal.ino` — raw ADC output, no onboard filters
 
----
-
-# 4. How EEG Signals Work (Simple Explanation)
-The Arduino reads values **around ~512** (middle of its 0–1023 ADC range).
-
-A single value (e.g., 519) doesn’t tell you anything. What matters is the **pattern over time**:
-
-- Fast wiggles → **Beta waves** → Focus
-- Slow wiggles → **Alpha waves** → Relaxation
-
-
----
-
-# 5. EEG Frequency Bands & Meanings
-| Band  | Hz Range | Meaning |
-|-------|----------|---------|
-| Delta | 0.5–3 Hz | Deep sleep |
-| Theta | 3–8 Hz | Drowsy / Daydreaming |
-| Alpha | 8–13 Hz | Relaxed but awake |
-| Beta  | 13–30 Hz | Focus / mental effort |
-
-Gamma is ignored because low‑cost electrodes can’t capture it reliably.
-
----
-
-# 6. Why the Alpha/Beta Ratio?
-A simple and reliable indicator:
+**Wiring:**
 ```
-alpha_beta_ratio = alpha_power / beta_power
-```
-Interpretation:
-- **High ratio → relaxed**
-- **Low ratio → focused**
-
-Used to drive in‑game actions:
-- Focus → accelerate
-- Relax → stop braking / idle
-
----
-
-# 7. Machine Learning: SVM (Simple Explanation)
-An **SVM** finds the best line separating two groups.
-
-Imagine plotting:
-- X‑axis = alpha power
-- Y‑axis = beta power
-
-Relaxed points cluster together.  
-Focused points cluster elsewhere.  
-SVM draws the optimal boundary.
-
----
-
-# 8. End‑to‑End BCI Pipeline (Game Control Flow)
-1. Arduino reads EEG voltage continuously
-2. Arduino applies digital filters:
-   - 50 Hz notch
-   - 0.5–30 Hz band‑pass
-3. Python receives filtered samples
-4. Python computes PSD using Welch method
-5. Features extracted:
-   - Alpha power
-   - Beta power
-   - Theta/Delta
-   - Alpha/Beta ratio
-   - Spectral centroid
-   - Peak frequency
-   - Spectral slope
-6. SVM performs classification
-7. Game receives commands:
-   - Focus → "move"
-   - Relax → "stop"
-
----
-
-# 9. Arduino Hardware Installation
-1. Connect Arduino board to PC via USB
-2. Connect EEG electrodes to BioAmp EXG Pill
-3. Wire BioAmp → Arduino:
-   - VCC → 5V
-   - GND → GND
-   - OUT → A0
-
-Diagram: `artefacts/images/connection_bioamp_exg_pill_to_arduino.png`
-
----
-
-# 10. Arduino Software Setup
-1. Install the **Arduino IDE**
-2. Upload test sketches from the `arduino_tests/` folder
-
----
-
-# 11. Arduino Test Procedures
-## 11.1 Test 1.0 — Board Test
-- Ensure Serial communication works.
-
-## 11.2 Test 1.1 — Sensor Read Test
-- Values should fluctuate around **450–600** (center ≈ 512)
-
-## 11.3 Test 1.2 — EEG Filter Test
-Purpose: verify that only useful EEG frequencies remain.
-
-**Pass-band:** 0.5–30 Hz  
-**Stop-band:** <0.5 Hz, >30 Hz, and 50 Hz mains
-
-Expected filtered signal:
-- Centered near **512**
-- No clipping
-- Stable fluctuations in **450–600** range
-
-A “PASS” is confirmed when the signal shows stable fluctuations around 512, without clipping (0 or 1023) and without drifting out of range.
-
-## 11.4 Test 1.3 — BCI FFT Test
-Arduino should:
-- Sample at 500–512 Hz
-- Filter signal
-- Perform FFT every N samples
-- Output: `delta%, theta%, alpha%, beta%, gamma%` (sum ≈ 100%)
-
----
-
-# Python Solution Install
-```
-cd python_solution
-python3 -m venv .venv
-source .venv/bin/activate
-python3 -m pip install -r requirements.txt
-python3 predict.py
+BioAmp EXG Pill → Arduino UNO R4
+  VCC → 5V
+  GND → GND
+  OUT → A0
 ```
 
----
-
-# Dataset Information
-
-The dataset consists of **3 recording sessions** from a single subject (the author):
-
-| Session | Label | Duration | Activity | Details | Music | Eyes |
-|---------|-------|----------|----------|---------|-------|------|
-| 1 | Concentrate | 3 min | Play | Subway Surfers | - | - |
-| 1 | Relax | 5.1 min | Meditate | - | Yes | Closed |
-| 2 | Concentrate | 5 min | Focus | Car Logo game | - | - |
-| 2 | Relax | 5 min | Meditate | - | No | Closed |
-| 3 | Concentrate | 5 min | Play | Subway Surfers | - | - |
-| 3 | Relax | 5 min | Meditate | - | No | Closed |
-
-**Training Data:** Session 3 only (10 minutes: 5 min concentrate + 5 min relax)
-**Total Available:** ~28 minutes across all sessions
-**Sampling Rate:** 512 Hz
-**Window Size:** 1 second (512 samples) with 50% overlap
-**Feature Count:** 19 (spectral + temporal + Arduino-inspired smoothed features)
-
-The model achieves **77-80% accuracy** using SVM with RBF kernel after proper feature engineering, artifact rejection, and Arduino-inspired smoothing.
+**Expected signal:** ADC values around 512 (midpoint of 0–1023 range), varying ±10–50 counts with EEG/EOG.
 
 ---
 
-# 12. How the Machine Learning Model Works (Simple Explanation)
+# 3. Electrode Placement History
 
-## The Problem: Detecting Mental States from Brain Signals
+## 3.1 Wire color convention (BioAmp EXG Pill)
+- **Red** → IN+ (positive differential input)
+- **Black** → IN− (negative differential input)
+- **Yellow** → REF (bias / reference, helps common-mode rejection)
 
-Imagine you're wearing an EEG sensor that measures your brain's electrical activity. When you concentrate, your brain produces more **beta waves** (fast wiggles). When you relax, it produces more **alpha waves** (slow wiggles). But here's the challenge:
+## 3.2 Placement attempts (chronological)
 
-- Everyone's brain is different
-- Your "high beta" might be someone else's "low beta"
-- Noise from eye blinks, muscle movements, etc.
-- Simple thresholds don't work well
+### Placement A — Original (Datasets 01–07)
+| Wire | Location |
+|------|----------|
+| Red (IN+) | Forehead center |
+| Black (IN−) | Left mastoid (behind left ear) |
+| Yellow (REF) | Right mastoid (behind right ear) |
 
-**Goal:** Build a system that learns to recognize YOUR concentrate vs relax patterns specifically.
+**Result:** Excellent signal stability. Good RelaxUp/FocusDown detection (alpha/beta). No horizontal eye movement (HEOG) capture — left/right was brain-state only.
 
 ---
 
-## Two Approaches: Threshold vs Machine Learning
+### Placement B — Outer Canthus (Dataset 08) ✓ BEST ACCURACY
+| Wire | Location |
+|------|----------|
+| Red (IN+) | Forehead center |
+| Black (IN−) | Left outer canthus (corner of left eye) |
+| Yellow (REF) | Right mastoid |
 
-### Approach 1: Simple Threshold (Arduino Code)
+**Result:**
+- Confirmed ~480 ADC looking left, ~520 ADC looking right (40 count HEOG signal)
+- Binary (CBRight vs SingLeft) accuracy: **84%**
+- 4-class accuracy: **62%**
+- **Issue:** Snap connector on black wire was unreliable — electrode kept losing contact. The outer canthus is a curved, bony surface — electrode pad adhesion alone is not enough. The snap connector must be fully seated and taped over.
+
+**Why this placement works:** The forehead–outer-canthus axis captures both vertical EOG (VEOG, from forehead height) and horizontal EOG (HEOG, from lateral eye position). Lateral gaze creates a ±47 ADC transient per saccade (eye movement gesture).
+
+---
+
+### Placement C — Temple (attempted, abandoned)
+| Wire | Location |
+|------|----------|
+| Red (IN+) | Forehead center |
+| Black (IN−) | Left temple (temporal region) |
+| Yellow (REF) | Right mastoid |
+
+**Result:** Failed. The temporalis muscle overlies the temple — any jaw movement, swallow, or facial expression creates massive EMG artifacts (100–300 ADC spikes) that exceed the artifact rejection threshold. Signal cannot be maintained.
+
+---
+
+### Placement D — Swapped polarity (mistake, fixed)
+At one point red and black were accidentally swapped:
+- Red on outer canthus (IN+), Black on forehead (IN−)
+- Result: `raw=1023` (ADC saturated at VCC) — skin DC offset between those locations rails the amplifier
+- Fix: always keep Red on forehead
+
+---
+
+## 3.3 Recommendation for outer canthus use
+To make Placement B reliable:
+- Use **pre-gelled disposable ECG electrode pads** (e.g. 3M Red Dot) — the BioAmp snap connector fits directly
+- After snapping on, place a strip of **micropore medical tape** over the snap+electrode to mechanically lock the connection
+- Clean skin with alcohol wipe before placing
+- Wait 30–60 seconds after placement for the skin-electrode interface to stabilize
+
+---
+
+# 4. 4-Class System Architecture
+
+## Hybrid cascade (predict.py)
+
 ```
-if (beta_percentage > 2.0):
-    print("Focus detected!")
-else:
-    print("Relaxed")
+Raw ADC (512 Hz)
+       │
+       ├─── Per-sample IIR pipeline ──→ EOG envelope ──→ Blink detection
+       │                                                    (double blink = left click)
+       │
+       └─── 512-sample rolling window (every 256 samples = 0.5s)
+                    │
+                    ├─ Artifact rejection:
+                    │    • std < 1e-3 → flat/dead electrode
+                    │    • ADC > 1000 or < 20 → saturation
+                    │    • >50% samples with z > 4 → persistent noise
+                    │
+                    ├─ Scipy filters: notch(50Hz) → bandpass(0.5–30Hz)
+                    │
+                    ├─ 25 features extracted
+                    │
+                    └─ Hybrid cascade:
+                         beta% < 13%  → RelaxUp   (linear rule)
+                         alpha > 13%  → FocusDown  (linear rule)
+                         else         → ML (SVM binary: CBRight vs SingLeft)
 ```
 
-**How it works:**
-- Measure beta power as % of total brain activity
-- If beta > 2%, you're focusing
-- If beta < 2%, you're relaxed
+## Why hybrid?
+- RelaxUp and FocusDown are dominated by **brain state** (alpha/beta power) — linear rules are fast and interpretable
+- CBRight and SingLeft require **EOG + mental task combination** — ML handles this
 
-**Pros:** Simple, fast, no training needed
-**Cons:**
-- Fixed threshold doesn't adapt to you
-- Only uses 1 measurement
-- Sensitive to noise (one blink → wrong prediction)
-- Accuracy: ~60-70%
+## Majority vote
+Last 3 predictions are majority-voted before sending mouse command, smoothing out single bad windows.
 
-### Approach 2: Machine Learning (This Project)
+---
+
+# 5. Dataset History & Accuracy
+
+## 5.1 Full dataset log
+
+### Datasets 01–03 — 2-Class (Concentrate vs Relax)
+**Electrode:** Red=forehead center, Black=left mastoid, Yellow=right mastoid
+**Goal:** Original game control (car game) — focus=accelerate, relax=brake
+**Paradigm:** Sustained concentration (games, mental math) vs eyes-closed meditation
+**Duration:** ~5 min/class each session
+**Samples:** ~150k rows (~5 min at 512 Hz) per file
+**Accuracy:** 77–80% (SVM, 2-class)
+**Notes:** Clean stable signal. Strong alpha/beta separation. Foundation for all later work.
+
+---
+
+### Dataset 04 — 4-Class Attempt with Motor Imagery
+**Electrode:** Red=forehead center, Black=left mastoid, Yellow=right mastoid (unchanged)
+**Goal:** Add left/right fist clenching as two new classes
+**Classes:** relax, concentrate, left_fist_clench, right_fist_clench
+**Duration:** ~30s/class
+**Samples:** ~15k rows/class
+**Accuracy:** ~65% (4-class)
+**Notes:** Motor imagery with single forehead electrode doesn't capture enough signal. Abandoned. Left/right fist clenching is not distinguishable from this placement.
+
+---
+
+### Dataset 06 — First 4-Class Eye+Mental (with "pulse" movements)
+**Electrode:** Red=forehead center, Black=left mastoid, Yellow=right mastoid
+**Goal:** First attempt at 4-class eye movement + mental state control
+**Classes:** relax_pulse_up, focus_pulse_down, count_backwards_pulse_right, sing_pulse_left
+**Paradigm:** "Pulse" = brief repeated eye movements (not sustained gaze)
+**Duration:** ~2 min/class (~62k rows)
+**Accuracy:** 68.5% (4-class SVM)
+**Notes:** "Pulse" in filenames = blinking-style eye movements. Forehead+mastoid axis captures vertical EOG (up/down) reasonably. No HEOG on this axis — left/right relies entirely on mental task difference.
+
+---
+
+### Dataset 07 — Binary CBRight vs SingLeft (additional data)
+**Electrode:** Red=forehead center, Black=left mastoid, Yellow=right mastoid (unchanged)
+**Goal:** Collect more left/right data to improve binary model
+**Classes:** count_backwards_right, sing_left (binary only)
+**Duration:** ~2 min/class (~62k rows)
+**Accuracy:** 64.9% (binary SVM, datasets 06+07 combined: 74.6% ensemble)
+**Notes:** Combined with dataset 06 + 4 new features (skewness, kurtosis, peak_to_peak, line_length) + window_mean improved to 74.6%.
+
+---
+
+### Dataset 08 — Outer Canthus Placement ✓ Best result
+**Electrode:** Red=forehead center, Black=**left outer canthus** (corner of eye), Yellow=right mastoid
+**Goal:** Capture horizontal EOG (HEOG) for better left/right separation
+**Classes:** relax_up, focus_down, count_backwards_right, sing_left
+**Paradigm:** Sustained gaze in each direction + mental task
+**Duration:** ~30s/class (~16k rows)
+**Accuracy:** **84% binary (CBRight vs SingLeft)**, 62% 4-class
+**Signal:** Confirmed ~480 ADC looking left, ~520 ADC looking right (40 count HEOG differential)
+**Notes:** First dataset with confirmed HEOG signal. The saccade at the start of each recording (transition moment) created a ±47 ADC spike visible in the raw signal. Sustained gaze DC offset was only ~0.6 ADC (filtfilt normalizes it over 30s). Model primarily used mental task features (smoothed_alpha, smoothed_ratio) + saccade transient. Electrode contact was unstable — snap connector at outer canthus kept losing contact.
+
+---
+
+### Dataset 09 — Glance Gesture Paradigm
+**Electrode:** Red=forehead center, Black=**left outer canthus** (corner of eye), Yellow=right mastoid
+**Goal:** Replace sustained gaze with deliberate glance gestures for cleaner saccade signal
+**Classes:** relax_up, focus_down, count_backwards_right, sing_left
+**Paradigm:**
+- Left/Right: **glance left/right then return to center, repeat** — each glance = ±47 ADC saccade
+- Up/Down: **sustained gaze** + mental state (relax or count)
+**Duration:** ~60s/class (~31k rows)
+**Accuracy:** 75.5% binary (CBRight vs SingLeft), 60.2% 4-class
+**Signal:** line_length for glance states (796–885) vs sustained (513–526) confirmed saccades captured
+**Notes:** Glancing clearly captured in line_length and peak_to_peak features. window_mean diff only 2.4 ADC (weak direction signal). Electrode connector remained unreliable — lost signal repeatedly during live prediction due to snap connector issue at outer canthus and temporal muscle EMG interference when placed at temple instead.
+
+---
+
+## 5.2 Feature set (25 features, datasets 06 onward)
+Spectral: `E_alpha, E_beta, E_theta, E_delta, alpha_beta_ratio, theta_alpha_ratio, beta_theta_ratio, engagement_index, beta_percentage, peak_frequency, spectral_centroid, spectral_slope`
+
+Temporal: `hjorth_mobility, hjorth_complexity, zero_crossing_rate, signal_variance, signal_skewness, signal_kurtosis, peak_to_peak, line_length`
+
+Smoothed: `smoothed_beta, smoothed_alpha, smoothed_ratio`
+
+EOG/DC: `window_mean, window_mean_abs` (computed on notch-only signal, before HPF destroys DC component)
+
+## 5.3 Key insights
+- **Sustained gaze DC offset** is destroyed by the 0.5 Hz HPF over a 30s window → use notch-only signal for window_mean
+- **Saccade transients** (eye movement gestures) ARE captured: ±47 ADC spike, visible in line_length and peak_to_peak
+- **Mental task** (counting vs singing) is the primary discriminator for left/right — alpha/beta differences are real
+- **Forehead+mastoid** vertical axis captures VEOG (up/down) but no HEOG
+- **Forehead+outer canthus** diagonal axis captures both — but electrode contact is the limiting factor
+
+### Feature set (25 features, all datasets from 06+)
+Spectral: `E_alpha, E_beta, E_theta, E_delta, alpha_beta_ratio, theta_alpha_ratio, beta_theta_ratio, engagement_index, beta_percentage, peak_frequency, spectral_centroid, spectral_slope`
+
+Temporal: `hjorth_mobility, hjorth_complexity, zero_crossing_rate, signal_variance, signal_skewness, signal_kurtosis, peak_to_peak, line_length`
+
+Smoothed: `smoothed_beta, smoothed_alpha, smoothed_ratio`
+
+EOG/DC: `window_mean, window_mean_abs` (computed on notch-only signal, before HPF destroys DC component)
+
+### Key insight: glance vs sustained EOG
+- **Sustained gaze** (looking left/right continuously): The HPF in the bandpass filter destroys the DC component over a 30s window. `window_mean` barely differs between left/right (0.6 ADC).
+- **Glance gesture** (flick left/right then return to center): Each saccade creates a ±47 ADC transient visible in `line_length` and `peak_to_peak`. `window_mean` captures a partial shift (~2.4 ADC/glance).
+- Model discriminates using **both EOG transients AND mental task** (alpha/beta patterns from counting vs singing).
+
+---
+
+# 6. Scripts Reference
+
+## collect.py
+Collects raw EEG/EOG data from Arduino and saves to CSV.
+
+```bash
+./collect.py <state_name> [seconds]
+# e.g.: ./collect.py 10_relax_up 60
+# Saves to: ../artefacts/data/<state_name>.csv
+```
+
+- Progress bar with countdown
+- Press Enter to stop early
+- Plays Glass.aiff sound on completion
+- Warns if fewer than 90% of expected samples collected
+- Auto-detects Arduino port (excludes Bluetooth/debug-console)
+
+## predict.py
+Live 4-class prediction with mouse control.
+
+```bash
+./predict.py
+# or: BCI_PORT=/dev/cu.usbmodem2101 ./predict.py
+```
+
+**Display legend:**
+```
+β%     = beta band power %       (low β → RelaxUp linear rule)
+α%     = alpha band power %      (high α → FocusDown linear rule)
+δ%     = delta band power %      (high δ = movement/noise/poor contact)
+θ%     = theta band power %
+w_mean = raw DC level            (eye position: ~480 left, ~520 right)
+pCB    = ML prob → CBRight       (only shown when linear rules don't fire)
+pSL    = ML prob → SingLeft      (only shown when linear rules don't fire)
+method = what triggered decision: linear rule or ML
+votes  = last 3 predictions      (majority wins)
+```
+
+**Signal quality indicators:**
+- `⏳ Waiting for first valid window... raw=NNN` — normal startup
+- Normal output — good contact, predictions running
+- `⚠ SIGNAL LOST (Ns) — check electrode raw=NNN` — electrode lost contact
+
+**Cascade thresholds (tune if needed):**
 ```python
-model.predict(your_brain_features)
-→ Uses 19 measurements + learned patterns
-→ Accuracy: 80-85%
+BETA_RELAX_THRESH  = 13.0   # beta% below this → RelaxUp
+ALPHA_FOCUS_THRESH = 0.13   # alpha above this (and beta > thresh) → FocusDown
 ```
 
-**How it works:** Instead of a fixed rule, the model **learns** from examples.
+## detect.py
+Calibration tool — measures personal brainwave values and suggests threshold adjustments.
+
+```bash
+./detect.py relax focus
+```
+
+## notebook/create_prediction_model.ipynb
+Training notebook. Cells are numbered by dataset. Run the last two cells for the latest model.
+
+Current active cells:
+- `dja2atoz16j` — load dataset 09, extract features, check HEOG signal
+- `v1drh1b3xze` — train SVM/RF/GB/Ensemble, save model.pkl + scaler.pkl
 
 ---
 
-## Step-by-Step: How ML Training Works
+# 7. Signal Quality Guide
 
-Think of it like teaching a friend to recognize your mental states:
-
-### **Step 1: Collect Examples**
-You provide training data - recordings of your brain when:
-- Concentrating (playing games, solving problems)
-- Relaxing (meditating, eyes closed)
-
-**In this project:** 10 minutes total (5 min concentrate + 5 min relax)
-
-### **Step 2: Extract Features**
-For each 1-second window of brain activity, we calculate **19 measurements**:
-
-| Feature | What It Measures | Example Value |
-|---------|------------------|---------------|
-| `E_beta` | Beta wave power (concentration) | 0.18 (18% of total) |
-| `E_alpha` | Alpha wave power (relaxation) | 0.22 (22% of total) |
-| `beta_percentage` | Beta as % (Arduino's metric) | 18.0% |
-| `smoothed_beta` | Noise-reduced beta | 0.17 |
-| `hjorth_mobility` | Signal frequency variation | 1.2 |
-| ... | (15 more features) | ... |
-
-Think of these as **different measurements** you'd take to describe brain activity - like how you'd describe a car with multiple specs (speed, fuel, RPM, temperature, etc.).
-
-### **Step 3: Label the Data**
-Each 1-second window gets a label:
-- **0** = Relax
-- **1** = Concentrate
-
-After processing, we have ~1,000 examples:
+## Good signal
 ```
-Window 1: [E_beta=0.15, E_alpha=0.25, smoothed_beta=0.14, ...] → Label: 0 (Relax)
-Window 2: [E_beta=0.22, E_alpha=0.18, smoothed_beta=0.21, ...] → Label: 1 (Focus)
-Window 3: [E_beta=0.16, E_alpha=0.24, smoothed_beta=0.15, ...] → Label: 0 (Relax)
-...
+β=8.2%  α=12.4%  δ=55.3%  θ=8.1%  w_mean=513.2  | method=linear β<13.0  | votes=[000] → RelaxUp
 ```
+- `δ` ideally below 70% (some delta is normal, high delta = movement/noise)
+- `w_mean` should be 490–530 (near 512 midpoint)
+- Output changes every second (not frozen)
 
-### **Step 4: Train the SVM Model**
-
-**SVM = Support Vector Machine** - finds the best way to separate two groups.
-
-**Simple Analogy:**
-Imagine plotting your brain data on a graph:
-- X-axis = Beta power
-- Y-axis = Alpha power
-
+## Electrode lost contact
 ```
-      Alpha
-       ↑
-  0.3 |  R  R     R
-      |  R    R R
-  0.2 |     R   F  F
-      |      F  F  F
-  0.1 |     F  F
-      |________________→ Beta
-         0.1  0.2  0.3
-
-  R = Relax samples
-  F = Focus samples
+⚠  SIGNAL LOST (8s) — check electrode  raw=634
 ```
+- `raw` values jumping wildly (300–700 range) = floating input
+- `raw=1023` constantly = ADC saturated (polarity wrong or electrode rail)
+- `raw` frozen at same value = flat signal (full disconnection)
 
-SVM's job: **Draw the best line** separating R's from F's.
+## Artifact rejection thresholds
+| Check | Condition | Meaning |
+|-------|-----------|---------|
+| `std < 1e-3` | Flat signal | Dead electrode |
+| `x.max() > 1000` | Near rail high | Saturation |
+| `x.min() < 20` | Near rail low | Saturation |
+| `>50% samples z > 4` | Persistent noise | Floating or muscle EMG |
 
-But wait - we have **19 dimensions** (19 features), not just 2! So SVM finds the best **hyperplane** (19-dimensional "line") that separates concentrate from relax.
-
-**Magic of SVM:**
-- Tries different separators
-- Picks the one with the **biggest margin** (most confident separation)
-- Handles non-linear patterns using the **RBF kernel** (like drawing curves instead of straight lines)
-
-### **Step 5: Optimize Hyperparameters**
-
-SVM has settings (hyperparameters) that affect how it learns:
-
-| Parameter | What It Does | Example Values |
-|-----------|-------------|----------------|
-| `C` | How strict vs flexible | 0.1 (lenient) to 100 (strict) |
-| `gamma` | How curvy the separator can be | 0.001 (smooth) to 1 (wiggly) |
-| `kernel` | Shape of separator | 'rbf' (curved), 'linear' (straight) |
-
-**GridSearchCV** tries **all combinations** and picks the best:
-```
-Testing: C=0.1, gamma=0.01, kernel=rbf → Accuracy: 72%
-Testing: C=1, gamma=0.1, kernel=rbf → Accuracy: 78%
-Testing: C=10, gamma=0.01, kernel=rbf → Accuracy: 81% ← Best!
-...
-```
-
-This is why training takes 5-10 minutes - it's testing hundreds of combinations!
-
-### **Step 6: Test & Validate**
-
-After training, we test on **unseen data** (20% held back):
-```
-Trained on: 800 samples
-Tested on: 200 samples (model has never seen these!)
-
-Result: 81% accuracy
-```
-
-**What this means:**
-- 81 out of 100 predictions are correct
-- Way better than 60-70% from simple threshold
-- Good enough for real-time BCI control!
+## Interpreting δ%
+- δ < 50%: clean signal
+- δ 50–80%: some noise/movement, model still works
+- δ > 90%: heavy noise — electrode contact poor or large movement artifacts
 
 ---
 
-## How Prediction Works (Real-Time)
+# 8. EEG/EOG Background
 
-When you run `predict.py`:
+## EEG Frequency Bands
+| Band | Hz | Mental state |
+|------|----|--------------|
+| Delta | 0.5–3 | Sleep, heavy artifacts |
+| Theta | 4–7 | Drowsy, daydreaming |
+| Alpha | 8–13 | Relaxed, eyes closed/up |
+| Beta | 13–30 | Focus, concentration, counting |
 
-### **Step 1: Read EEG Signal**
-```python
-Arduino sends: [520, 518, 525, 512, ...]  # Raw voltage values
-```
+## EOG (Electrooculography)
+Eye movement generates a dipole potential (~1mV). The cornea is positive, retina is negative.
 
-### **Step 2: Filter Noise**
-```python
-Apply 50 Hz notch filter → Remove electrical interference
-Apply 0.5-30 Hz bandpass → Keep only brain waves
-```
+- **Looking right** → corneal positive pole moves right → voltage rises on right, falls on left
+- **Looking left** → opposite
+- **Blink** → vertical EOG spike (100–300µV) → detected in the blink pipeline
 
-### **Step 3: Extract Features**
-For each 1-second window (512 samples):
-```python
-features = {
-    'E_beta': 0.19,
-    'E_alpha': 0.21,
-    'beta_percentage': 19.0,
-    'smoothed_beta': 0.18,
-    ... (15 more)
-}
-```
+With forehead (IN+) to outer canthus (IN−):
+- Right gaze: forehead voltage unchanged, outer canthus voltage shifts → net differential changes
+- Measured: ~47 ADC per full lateral gaze (dataset 08 confirmation)
 
-### **Step 4: Scale Features**
-```python
-# ML models need consistent scales
-scaled_beta = (raw_beta - mean_beta) / std_beta
-```
-
-### **Step 5: Predict**
-```python
-prediction = model.predict(scaled_features)
-→ 1 (Focus!) or 0 (Relax)
-```
-
-### **Step 6: Smooth Output**
-To prevent flickering:
-```python
-# Majority vote over last 5 predictions
-predictions = [1, 1, 0, 1, 1]
-final = majority_vote(predictions)  # → 1 (Focus)
-```
-
-### **Step 7: Send Command**
-```python
-if final == 1:
-    press('W')  # Move forward in game
-else:
-    press('SPACE')  # Stop
-```
+## Why the 0.5Hz HPF destroys sustained EOG
+The bandpass filter (0.5 Hz HPF) uses `filtfilt` (zero-phase, applied forward+backward). Over a 30s recording of sustained left gaze, the filter normalizes away the DC offset. Fix: compute `window_mean` on the **notch-only** signal before applying HPF.
 
 ---
 
-## Why ML Beats Simple Thresholds
+# 9. Machine Learning Approach
 
-| Aspect | Threshold | Machine Learning |
-|--------|-----------|------------------|
-| **Personalization** | Generic threshold (beta > 2%) | Learns YOUR patterns |
-| **Features Used** | 1 (beta percentage) | 19 (comprehensive) |
-| **Noise Handling** | Sensitive to blinks | Robust (smoothing + multi-feature) |
-| **Accuracy** | 60-70% | 80-85% |
-| **Adaptability** | Fixed forever | Retrain with more data |
-
-**Real-World Example:**
-
-You blink during concentration:
-
-**Threshold approach:**
+## Pipeline
 ```
-Blink → Alpha spike → beta drops below 2%
-→ Wrong prediction: "Relax"
-→ Game stops when you wanted to accelerate ❌
+Raw EEG (512 Hz)
+→ Notch filter (50 Hz, Q=30)        # remove mains interference
+→ Bandpass filter (0.5–30 Hz)       # remove DC drift + high-freq noise
+→ 25 features per 512-sample window
+→ StandardScaler normalization
+→ Binary SVM (CBRight vs SingLeft)
 ```
 
-**ML approach:**
-```
-Blink → Alpha spike detected
-BUT also checks:
-  - smoothed_beta still high (smoothing filters the spike)
-  - hjorth_complexity unchanged
-  - beta_percentage averaged over time
-  - spectral_centroid stable
-→ Correct prediction: "Focus"
-→ Game keeps going ✓
-```
+## Feature importance (Random Forest, dataset 09)
+Top features for left/right discrimination:
+1. `smoothed_alpha` — mental state (singing vs counting)
+2. `window_mean` — DC eye position component
+3. `line_length` — total signal variation (glance = high)
+4. `window_mean_abs` — magnitude of DC shift
+5. `spectral_slope` — frequency distribution
+
+## Model selection
+GridSearchCV over SVM + RandomForest + GradientBoosting. Best by 5-fold F1 is saved.
+Current best: SVM (dataset 09), 75.5% binary accuracy.
 
 ---
 
-## Summary: The ML Pipeline
-
-```
-1. TRAINING (one-time, 10 minutes):
-   Raw EEG → Filter → Windows → Extract 19 features → Label → Train SVM
-   Result: model.pkl (learned patterns)
-
-2. PREDICTION (real-time, every second):
-   Raw EEG → Filter → Window → Extract 19 features → Scale → model.predict()
-   Result: 0 (relax) or 1 (focus)
-
-3. OUTPUT:
-   Send keyboard command to control game hands-free!
-```
-
-**Why it works:** The model learned from 1,000 examples of YOUR brain patterns, so it knows what YOUR concentrate vs relax looks like - not some generic threshold!
-
----
-
-# 13. Prediction Feature Statistics (Example)
-```
-E_alpha            mean: 5.23
-E_beta             mean: 11.23
-E_theta            mean: 5.38
-E_delta            mean: 9.54
-alpha/beta ratio   mean: 0.63
-peak_frequency     mean: 7.36 Hz
-spectral_centroid  mean: 11.38 Hz
-spectral_slope     mean: -10.79
-```
-
----
-
-# 13. Interpreting Feature Statistics
-### Healthy indicators:
-- Balanced class distribution
-- Alpha/Beta ratio around 0.6
-- Spectral centroid around 10–12 Hz
-
-### Red Flags (Require Fixes):
-**1. `peak_frequency = 0 Hz`** → Should not happen after proper filtering.
-
-**2. `spectral_slope ≈ -10`** → EEG slopes should be ~−1 to −2. Fit only within 2–30 Hz.
-
-**3. Huge Delta/Theta values** → Motion or eye‑blink artifacts. You must reject noisy windows.
-
----
-
-# 14. License
-This project is licensed under the MIT License.
-
-# Experience
-
+# 10. License
+MIT License
