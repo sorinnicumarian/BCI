@@ -1,0 +1,207 @@
+{
+  "_source": {
+    "retrieved": "2026-09-29",
+    "how": "Claude Code `claude-api` skill (bundled skill 2.1.284: SKILL.md 'Current Models (cached: 2026-09-25)', shared/models.md, shared/prompt-caching.md) and the pricing page it lists in shared/live-sources.md: https://platform.claude.com/docs/en/about-claude/pricing.md (Model pricing, Prompt caching, Fast mode, Data residency, Long context sections), fetched 2026-09-29.",
+    "basis": "Anthropic first-party Claude API list prices in USD per million tokens (MTok). Not Bedrock/Vertex partner pricing. Not the invoice: no negotiated discounts, no subscription plans, no Batch discount.",
+    "long_context": "Per the pricing page, Claude 4.6 and later models include the full 1M-token context window at standard pricing (a 900k-token request is billed at the same per-token rate as a 9k-token request). So '[1m]' model ids resolve to the same rates; no long-context premium is modelled. Sonnet 4.5 / Sonnet 4 long-context (>200K) rates are not in the reference, so they are not modelled.",
+    "cache_multipliers": "5m write = 1.25x input, 1h write = 2x input, read = 0.1x input (0.025x Fable 5.1 / Mythos 5.1, 0.05x Opus 5.5). Values below are the published per-model dollar figures.",
+    "fast_mode": "usage.speed == 'fast': Opus 5.5 $8/$40, Opus 5 and Opus 4.8 $10/$50 = 2x standard; caching multipliers stack on top. Other models: fast cost is flagged, not guessed.",
+    "inference_geo": "usage.inference_geo == 'us' on Claude 4.6+ models = 1.1x on all token categories."
+  },
+  "match": "A model id is normalised (strip any '[...]' suffix such as '[1m]', and a leading 'anthropic.' or '<region>.anthropic.'), then matched to a key when it equals the key or the key is followed only by a date suffix ('-YYYYMMDD' or '@YYYYMMDD') and/or a Bedrock version suffix ('-v1:0'). A newer id that merely shares a prefix (e.g. a future 'claude-opus-5-7') does NOT match 'claude-opus-5'. Unknown model -> cost null and flagged, never guessed.",
+  "unit": "USD per 1,000,000 tokens",
+  "models": {
+    "claude-fable-5-1": {
+      "name": "Claude Fable 5.1",
+      "input": 10,
+      "output": 50,
+      "cache_write_5m": 12.5,
+      "cache_write_1h": 20,
+      "cache_read": 0.25,
+      "us_inference_geo_multiplier": 1.1
+    },
+    "claude-mythos-5-1": {
+      "name": "Claude Mythos 5.1",
+      "input": 10,
+      "output": 50,
+      "cache_write_5m": 12.5,
+      "cache_write_1h": 20,
+      "cache_read": 0.25,
+      "us_inference_geo_multiplier": 1.1
+    },
+    "claude-fable-5": {
+      "name": "Claude Fable 5",
+      "input": 10,
+      "output": 50,
+      "cache_write_5m": 12.5,
+      "cache_write_1h": 20,
+      "cache_read": 1.0,
+      "us_inference_geo_multiplier": 1.1
+    },
+    "claude-mythos-5": {
+      "name": "Claude Mythos 5",
+      "input": 10,
+      "output": 50,
+      "cache_write_5m": 12.5,
+      "cache_write_1h": 20,
+      "cache_read": 1.0,
+      "us_inference_geo_multiplier": 1.1
+    },
+    "claude-opus-5-5": {
+      "name": "Claude Opus 5.5",
+      "input": 4,
+      "output": 20,
+      "cache_write_5m": 5,
+      "cache_write_1h": 8,
+      "cache_read": 0.2,
+      "fast_mode_multiplier": 2.0,
+      "us_inference_geo_multiplier": 1.1
+    },
+    "claude-opus-5": {
+      "name": "Claude Opus 5",
+      "input": 5,
+      "output": 25,
+      "cache_write_5m": 6.25,
+      "cache_write_1h": 10,
+      "cache_read": 0.5,
+      "fast_mode_multiplier": 2.0,
+      "us_inference_geo_multiplier": 1.1
+    },
+    "claude-opus-4-8": {
+      "name": "Claude Opus 4.8",
+      "input": 5,
+      "output": 25,
+      "cache_write_5m": 6.25,
+      "cache_write_1h": 10,
+      "cache_read": 0.5,
+      "fast_mode_multiplier": 2.0,
+      "us_inference_geo_multiplier": 1.1
+    },
+    "claude-opus-4-7": {
+      "name": "Claude Opus 4.7",
+      "input": 5,
+      "output": 25,
+      "cache_write_5m": 6.25,
+      "cache_write_1h": 10,
+      "cache_read": 0.5,
+      "us_inference_geo_multiplier": 1.1
+    },
+    "claude-opus-4-6": {
+      "name": "Claude Opus 4.6",
+      "input": 5,
+      "output": 25,
+      "cache_write_5m": 6.25,
+      "cache_write_1h": 10,
+      "cache_read": 0.5,
+      "us_inference_geo_multiplier": 1.1
+    },
+    "claude-opus-4-5": {
+      "name": "Claude Opus 4.5",
+      "input": 5,
+      "output": 25,
+      "cache_write_5m": 6.25,
+      "cache_write_1h": 10,
+      "cache_read": 0.5,
+      "us_inference_geo_multiplier": null
+    },
+    "claude-opus-4-1": {
+      "name": "Claude Opus 4.1",
+      "input": 15,
+      "output": 75,
+      "cache_write_5m": 18.75,
+      "cache_write_1h": 30,
+      "cache_read": 1.5,
+      "us_inference_geo_multiplier": null
+    },
+    "claude-opus-4-0": {
+      "name": "Claude Opus 4",
+      "input": 15,
+      "output": 75,
+      "cache_write_5m": 18.75,
+      "cache_write_1h": 30,
+      "cache_read": 1.5,
+      "us_inference_geo_multiplier": null
+    },
+    "claude-opus-4-20250514": {
+      "name": "Claude Opus 4",
+      "input": 15,
+      "output": 75,
+      "cache_write_5m": 18.75,
+      "cache_write_1h": 30,
+      "cache_read": 1.5,
+      "us_inference_geo_multiplier": null
+    },
+    "claude-sonnet-5-5": {
+      "name": "Claude Sonnet 5.5",
+      "input": 2,
+      "output": 10,
+      "cache_write_5m": 2.5,
+      "cache_write_1h": 4,
+      "cache_read": 0.2,
+      "us_inference_geo_multiplier": 1.1
+    },
+    "claude-sonnet-5": {
+      "name": "Claude Sonnet 5",
+      "input": 2,
+      "output": 10,
+      "cache_write_5m": 2.5,
+      "cache_write_1h": 4,
+      "cache_read": 0.2,
+      "us_inference_geo_multiplier": 1.1
+    },
+    "claude-sonnet-4-6": {
+      "name": "Claude Sonnet 4.6",
+      "input": 3,
+      "output": 15,
+      "cache_write_5m": 3.75,
+      "cache_write_1h": 6,
+      "cache_read": 0.3,
+      "us_inference_geo_multiplier": 1.1
+    },
+    "claude-sonnet-4-5": {
+      "name": "Claude Sonnet 4.5",
+      "input": 3,
+      "output": 15,
+      "cache_write_5m": 3.75,
+      "cache_write_1h": 6,
+      "cache_read": 0.3,
+      "us_inference_geo_multiplier": null
+    },
+    "claude-sonnet-4-0": {
+      "name": "Claude Sonnet 4",
+      "input": 3,
+      "output": 15,
+      "cache_write_5m": 3.75,
+      "cache_write_1h": 6,
+      "cache_read": 0.3,
+      "us_inference_geo_multiplier": null
+    },
+    "claude-sonnet-4-20250514": {
+      "name": "Claude Sonnet 4",
+      "input": 3,
+      "output": 15,
+      "cache_write_5m": 3.75,
+      "cache_write_1h": 6,
+      "cache_read": 0.3,
+      "us_inference_geo_multiplier": null
+    },
+    "claude-haiku-4-5": {
+      "name": "Claude Haiku 4.5",
+      "input": 1,
+      "output": 5,
+      "cache_write_5m": 1.25,
+      "cache_write_1h": 2,
+      "cache_read": 0.1,
+      "us_inference_geo_multiplier": null
+    },
+    "claude-3-5-haiku-20241022": {
+      "name": "Claude Haiku 3.5",
+      "input": 0.8,
+      "output": 4,
+      "cache_write_5m": 1.0,
+      "cache_write_1h": 1.6,
+      "cache_read": 0.08,
+      "us_inference_geo_multiplier": null
+    }
+  }
+}

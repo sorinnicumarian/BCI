@@ -30,3 +30,12 @@ build/
 # *.pkl
 # *.csv
 # *.h5
+
+# agentic-project-template
+!.claude/
+.claude/settings.local.json
+.env
+# your own scratch space, never pushed
+private/
+# local run output: cost ledger (hooks/finops), supervisor run state
+runs/
