@@ -1,379 +1,187 @@
 #!/Users/sorin/Documents/Repos/BCI/python_solution/.venv/bin/python
 # -*- coding: utf-8 -*-
 """
-Real-time EEG 4-Class Mouse Control (UNO R4 + BioAmp)
+Real-time 2-Class BCI — Linear rules only, no ML, no scipy.
+Serial reading runs in its own thread; mouse runs in another.
+Prints band powers every second regardless of signal state.
 
-Classes:
-0 = Rest (stop cursor)
-1 = Focus (move forward / click)
-2 = Left Fist Imagery (move cursor LEFT)
-3 = Right Fist Imagery (move cursor RIGHT)
-
-Features:
-- 4-class SVM classification
-- Fast predictions (4 Hz, STEP=128)
-- Smooth mouse movement
-- Motor imagery support
+Class → mouse:
+  0  Relax  (β low)   → UP
+  1  Focus  (β high)  → DOWN
 """
 
 import os
 import time
+import threading
 import warnings
 from collections import deque
 
 import numpy as np
-import pandas as pd
 import serial
 import serial.tools.list_ports as list_ports
-from scipy import signal
-import pickle
 
-# Optional: keyboard control (grant Accessibility on macOS)
 try:
     import pyautogui
+    pyautogui.FAILSAFE = False
     HAVE_PYAUTOGUI = True
 except Exception:
     HAVE_PYAUTOGUI = False
 
-warnings.filterwarnings("ignore", category=UserWarning)
+warnings.filterwarnings("ignore")
 
-# -----------------------------
-# CONFIG
-# -----------------------------
-FS = 512                 # sampling rate (Hz)
-WIN = 512                # 1 s window @ 512 Hz
-STEP = 128               # step size: 128 = 0.25s (4 pred/s FAST), 256 = 0.5s, 512 = 1s
-Z_MAX = 6.0              # z-score gate (artifact rejection) - matches training notebook
-STD_MIN = 1e-3           # flat window guard
-VOTE_LEN = 1             # majority vote disabled - raw predictions for fast response
+# ── CONFIG ────────────────────────────────────────────────────────────────────
+FS   = 512
+WIN  = 512   # 1 s window
+STEP = 128   # slide 128 samples → 4 predictions/s
 
-# Mouse Control Settings (4-class)
-MOUSE_SPEED = 15         # pixels per prediction for left/right movement
-MOUSE_UP_SPEED = 10      # pixels per prediction for forward movement
+BETA_THRESH   = 13.0   # β% below → Relax ↑,  at or above → Focus ↓
 
-# IMPORTANT: must match training feature order exactly
-COLS = [
-    'E_alpha', 'E_beta', 'E_theta', 'E_delta',
-    'alpha_beta_ratio', 'theta_alpha_ratio', 'beta_theta_ratio', 'engagement_index',
-    'beta_percentage',
-    'peak_frequency', 'spectral_centroid', 'spectral_slope',
-    'hjorth_mobility', 'hjorth_complexity', 'zero_crossing_rate', 'signal_variance',
-    'smoothed_beta', 'smoothed_alpha', 'smoothed_ratio'
-]
+MOUSE_STEP    = 8
+MOVE_EVERY_MS = 50
+EPS = 1e-12
 
-# If your current model.pkl/scaler.pkl were trained on *absolute* bandpowers,
-# keep the feature function below as relative or switch to absolute consistently in training too.
-# For now we keep relative powers because this is the robust setting going forward.
-# If you did NOT retrain yet, and your model needs absolute powers, ping me and I’ll give the absolute version.
+CLASS_NAMES = {0: 'Relax ↑', 1: 'Focus ↓'}
+MOUSE_MOVE  = {0: (0, -MOUSE_STEP), 1: (0, MOUSE_STEP)}
 
 
-# -----------------------------
-# Serial port selection
-# -----------------------------
+# ── SERIAL PORT ───────────────────────────────────────────────────────────────
 def pick_port():
-    """
-    Prefer UNO R4 native CDC (/dev/cu.usbmodem*) on macOS.
-    Avoid debug-console. Allow override via BCI_PORT env var.
-    """
     env = os.environ.get("BCI_PORT")
     if env:
         return env
-
     ports = list(list_ports.comports())
     if not ports:
-        raise RuntimeError("No serial ports found. Plug the board and try again.")
-
-    # 1) Prefer usbmodem
+        raise RuntimeError("No serial ports found.")
     for p in ports:
         if "usbmodem" in p.device.lower():
             return p.device
-
-    # 2) Any cu.usb* except debug
     for p in ports:
-        dev = p.device.lower()
-        if dev.startswith("/dev/cu.usb") and "debug" not in dev:
+        if p.device.lower().startswith("/dev/cu.usb") and "debug" not in p.device.lower():
             return p.device
-
-    # 3) Last resort: first non-debug
+    EXCLUDE = ("debug", "bluetooth", "bt-")
     for p in ports:
-        if "debug" not in p.device.lower():
+        if not any(x in p.device.lower() for x in EXCLUDE):
             return p.device
-
-    return ports[0].device
-
-
-# -----------------------------
-# Filters (correct & stable)
-# -----------------------------
-def setup_filters(fs: int):
-    """
-    Proper 50 Hz notch (Hz + Q=30) and stable 0.5–30 Hz band-pass (SOS).
-    """
-    b_notch, a_notch = signal.iirnotch(w0=50.0, Q=30.0, fs=fs)                     # Step 1 (correct units + Q)
-    sos_bp = signal.butter(4, [0.5, 30.0], btype='band', fs=fs, output='sos')      # Step 2 (SOS)
-    return b_notch, a_notch, sos_bp
+    raise RuntimeError("No suitable port. Set BCI_PORT env var.")
 
 
-def process_block(x: np.ndarray, b_notch, a_notch, sos_bp):
-    """
-    Zero-phase notch, then SOS band-pass for a single block.
-    """
-    x = signal.filtfilt(b_notch, a_notch, x)
-    x = signal.sosfiltfilt(sos_bp, x)
-    return x
+# ── BAND POWERS (pure numpy, no scipy) ───────────────────────────────────────
+def band_powers(x):
+    # Remove linear trend (slow drift from movement/electrode) before FFT
+    t  = np.arange(len(x))
+    x  = x - np.polyval(np.polyfit(t, x, 1), t)
+    xw    = x * np.hanning(len(x))
+    psd   = np.abs(np.fft.rfft(xw)) ** 2
+    freqs = np.fft.rfftfreq(len(x), 1.0 / FS)
+    total = psd[(freqs >= 4.0) & (freqs <= 30.0)].sum() + EPS  # exclude delta from total
+    E_d = psd[(freqs >= 0.5) & (freqs <= 4.0)].sum() / (total + EPS)
+    E_t = psd[(freqs >= 4.0) & (freqs <= 8.0)].sum() / total
+    E_a = psd[(freqs >= 8.0) & (freqs <= 13.0)].sum() / total
+    E_b = psd[(freqs >= 13.0) & (freqs <= 30.0)].sum() / total
+    return E_d * 100, E_t * 100, E_a * 100, E_b * 100
 
 
-# -----------------------------
-# Feature extraction (robust)
-# -----------------------------
-def calculate_psd_features(x: np.ndarray, fs: int):
-    """
-    Relative bandpowers + frequency ratios (robust across sessions).
-    """
-    f, psd = signal.welch(x, fs=fs, nperseg=len(x))
-    total = psd[(f >= 0.5) & (f <= 30.0)].sum() + 1e-12
+# ── SERIAL READER THREAD ──────────────────────────────────────────────────────
+# Runs in background; puts raw float values into a thread-safe deque.
+# The main thread drains this queue and processes windows.
+# This ensures pyautogui.move() can NEVER block serial reading.
 
-    E_alpha = psd[(f >= 8)  & (f <= 13)].sum() / total
-    E_beta  = psd[(f >= 13) & (f <= 30)].sum() / total
-    E_theta = psd[(f >= 4)  & (f <= 7)].sum()  / total
-    E_delta = psd[(f >= 0.5)& (f <= 3)].sum()  / total
-
-    alpha_beta_ratio = (E_alpha + 1e-12) / (E_beta + 1e-12)
-    theta_alpha_ratio = (E_theta + 1e-12) / (E_alpha + 1e-12)
-    beta_theta_ratio = (E_beta + 1e-12) / (E_theta + 1e-12)
-    engagement_index = E_beta / (E_alpha + E_theta + 1e-12)
-
-    # Arduino-inspired: beta as percentage
-    beta_percentage = E_beta * 100.0
-
-    return {
-        'E_alpha': E_alpha, 'E_beta': E_beta,
-        'E_theta': E_theta, 'E_delta': E_delta,
-        'alpha_beta_ratio': alpha_beta_ratio,
-        'theta_alpha_ratio': theta_alpha_ratio,
-        'beta_theta_ratio': beta_theta_ratio,
-        'engagement_index': engagement_index,
-        'beta_percentage': beta_percentage
-    }
+def serial_reader(ser, sample_queue, stop_event):
+    while not stop_event.is_set():
+        try:
+            line = ser.readline()
+        except Exception:
+            break
+        if not line:
+            continue
+        try:
+            sample_queue.append(float(line.decode("utf-8", errors="ignore").strip()))
+        except ValueError:
+            continue
 
 
-def calculate_additional_features(x: np.ndarray, fs: int):
-    """
-    Peak in 0.5–30 Hz (avoid DC), slope in 2–30 Hz (log10), centroid in passband.
-    """
-    f, psd = signal.welch(x, fs=fs, nperseg=len(x))
-
-    idx_pb = (f >= 0.5) & (f <= 30.0)
-    peak_frequency = float(f[idx_pb][np.argmax(psd[idx_pb])])
-
-    idx_slope = (f >= 2.0) & (f <= 30.0)
-    logf = np.log10(f[idx_slope] + 1e-12)
-    logp = np.log10(psd[idx_slope] + 1e-12)
-    spectral_slope = float(np.polyfit(logf, logp, 1)[0])
-
-    spectral_centroid = float((f[idx_pb] * psd[idx_pb]).sum() / (psd[idx_pb].sum() + 1e-12))
-
-    return {
-        'peak_frequency': peak_frequency,
-        'spectral_centroid': spectral_centroid,
-        'spectral_slope': spectral_slope
-    }
+# ── MOUSE THREAD ──────────────────────────────────────────────────────────────
+def mouse_mover(current_class_ref, stop_event):
+    """Moves mouse every MOVE_EVERY_MS based on current prediction."""
+    while not stop_event.is_set():
+        cls = current_class_ref[0]
+        if HAVE_PYAUTOGUI and cls in MOUSE_MOVE:
+            dx, dy = MOUSE_MOVE[cls]
+            try:
+                pyautogui.move(dx, dy, duration=0)
+            except Exception:
+                pass
+        time.sleep(MOVE_EVERY_MS / 1000.0)
 
 
-def calculate_temporal_features(x: np.ndarray):
-    """
-    Time-domain features capturing signal dynamics
-    """
-    # Hjorth mobility (mean frequency indicator)
-    diff_x = np.diff(x)
-    hjorth_mobility = np.std(diff_x) / (np.std(x) + 1e-12)
-
-    # Hjorth complexity (change in frequency)
-    diff2_x = np.diff(diff_x)
-    mobility2 = np.std(diff2_x) / (np.std(diff_x) + 1e-12)
-    hjorth_complexity = mobility2 / (hjorth_mobility + 1e-12)
-
-    # Zero-crossing rate (rough frequency estimate)
-    zero_crossings = np.sum(np.diff(np.sign(x)) != 0) / len(x)
-
-    # Signal variance (overall power)
-    variance = np.var(x)
-
-    return {
-        'hjorth_mobility': hjorth_mobility,
-        'hjorth_complexity': hjorth_complexity,
-        'zero_crossing_rate': zero_crossings,
-        'signal_variance': variance
-    }
-
-
-def extract_features(x: np.ndarray, fs: int):
-    feats = calculate_psd_features(x, fs)
-    feats.update(calculate_additional_features(x, fs))
-    feats.update(calculate_temporal_features(x))
-    return feats
-
-
-# -----------------------------
-# Load model + scaler (no Pipeline)
-# -----------------------------
-def load_model_and_scaler():
-    base = os.path.dirname(os.path.abspath(__file__))
-    model_path  = os.path.join(base, "model.pkl")
-    scaler_path = os.path.join(base, "scaler.pkl")
-
-    if not os.path.exists(model_path):
-        raise FileNotFoundError(f"model.pkl not found at: {model_path}")
-    if not os.path.exists(scaler_path):
-        raise FileNotFoundError(f"scaler.pkl not found at: {scaler_path}")
-
-    with open(model_path,  "rb") as f:
-        clf = pickle.load(f)
-    with open(scaler_path, "rb") as f:
-        scaler = pickle.load(f)
-    return clf, scaler
-
-
-# -----------------------------
-# Main loop
-# -----------------------------
+# ── MAIN ──────────────────────────────────────────────────────────────────────
 def main():
-    # Serial port
     port = pick_port()
     print(f"[INFO] Opening {port} @ 115200")
     ser = serial.Serial(port, 115200, timeout=1)
+    time.sleep(0.5)
+    ser.reset_input_buffer()
 
-    # Filters
-    b_notch, a_notch, sos_bp = setup_filters(FS)
+    print("[INFO] Streaming — binary linear only, no ML")
+    print(f"  β < {BETA_THRESH}%  → Relax ↑   (mouse up)")
+    print(f"  β ≥ {BETA_THRESH}%  → Focus ↓   (mouse down)")
+    print()
+    print("  δ%      θ%      α%      β%    raw   buf   → class")
+    print("  " + "-" * 55)
 
-    # ML
-    clf, scaler = load_model_and_scaler()
+    # Shared state
+    sample_queue      = deque()          # filled by reader thread
+    current_class_ref = [0]              # [0]=int, shared with mouse thread
+    stop_event        = threading.Event()
 
-    # Buffers
-    block = deque(maxlen=WIN)
-    votes = deque(maxlen=VOTE_LEN)
+    # Start background threads
+    t_serial = threading.Thread(target=serial_reader,
+                                args=(ser, sample_queue, stop_event), daemon=True)
+    t_mouse  = threading.Thread(target=mouse_mover,
+                                args=(current_class_ref, stop_event), daemon=True)
+    t_serial.start()
+    t_mouse.start()
 
-    # Exponential smoothing state (Arduino-inspired)
-    SMOOTHING_FACTOR = 0.63
-    smoothed_alpha = 0.0
-    smoothed_beta = 0.0
+    raw_buf = deque()
+    d_pct = t_pct = a_pct = b_pct = 0.0
+    last_print = time.monotonic()
 
-    print("[INFO] Streaming... (Ctrl+C to stop)")
-    print("[INFO] 4-Class Mouse Control: REST / FOCUS↑ / LEFT← / RIGHT→")
-    sample_count = 0
     try:
         while True:
-            line = ser.readline()
-            if not line:
-                continue
-            try:
-                v = float(line.decode("utf-8", errors="ignore").strip())
-            except ValueError:
-                continue
+            # Drain everything the reader thread collected
+            while sample_queue:
+                raw_buf.append(sample_queue.popleft())
 
-            sample_count += 1
-            # Debug: print every 512th sample (less spam with faster predictions)
-            if sample_count % 512 == 0:
-                print(f"[DEBUG] Received {sample_count} samples, latest: {v:.1f}, buffer: {len(block)}/512")
+            # Process window when buffer is full
+            if len(raw_buf) >= WIN:
+                x   = np.asarray(raw_buf, dtype=np.float64)
+                std = x.std()
+                if std > 0.5 and x.max() < 1010 and x.min() > 10:
+                    d_pct, t_pct, a_pct, b_pct = band_powers(x)
+                    current_class_ref[0] = 0 if b_pct < BETA_THRESH else 1
 
-            block.append(v)
-            if len(block) < WIN:
-                continue
+                for _ in range(STEP):
+                    raw_buf.popleft()
 
-            # Prepare 1 s window
-            x = np.asarray(block, dtype=np.float32)
+            # Print every second — always
+            now = time.monotonic()
+            if now - last_print >= 1.0:
+                last_print = now
+                raw_now  = raw_buf[-1] if raw_buf else 0
+                buf_fill = min(100, int(len(raw_buf) / WIN * 100))
+                cls      = current_class_ref[0]
+                print(f"  δ={d_pct:6.1f}  θ={t_pct:6.1f}  α={a_pct:6.1f}"
+                      f"  β={b_pct:6.1f}  raw={raw_now:4.0f}"
+                      f"  buf={buf_fill:3d}%  → {CLASS_NAMES[cls]}")
 
-            # Artifact rejection BEFORE filtering
-            std = x.std()
-            if std < STD_MIN:
-                print(f"[DEBUG] Rejected: std too low ({std:.6f})")
-                block.clear()
-                continue
-            zmax = np.max(np.abs((x - x.mean()) / (std + 1e-9)))
-            if zmax > Z_MAX:
-                print(f"[DEBUG] Rejected: z-score too high ({zmax:.2f})")
-                block.clear()
-                continue
+            time.sleep(0.001)  # yield CPU; reader thread runs freely
 
-            # print(f"[DEBUG] Processing window: std={std:.2f}, zmax={zmax:.2f}")  # Commented: too spammy at 2 Hz
-
-            # Filters
-            x = process_block(x, b_notch, a_notch, sos_bp)
-
-            # Features
-            feats = extract_features(x, FS)
-
-            # Apply exponential smoothing (Arduino-inspired)
-            smoothed_alpha = SMOOTHING_FACTOR * feats['E_alpha'] + (1 - SMOOTHING_FACTOR) * smoothed_alpha
-            smoothed_beta = SMOOTHING_FACTOR * feats['E_beta'] + (1 - SMOOTHING_FACTOR) * smoothed_beta
-            smoothed_ratio = (smoothed_alpha + 1e-12) / (smoothed_beta + 1e-12)
-
-            # Add smoothed features to the feature dictionary
-            feats['smoothed_alpha'] = smoothed_alpha
-            feats['smoothed_beta'] = smoothed_beta
-            feats['smoothed_ratio'] = smoothed_ratio
-
-            # Enforce training column order EXACTLY
-            df = pd.DataFrame([feats])[COLS]
-
-            # Sanity: verify scaler expects correct number of features
-            assert hasattr(scaler, "mean_") and scaler.mean_.shape[0] == len(COLS), \
-                f"Scaler expects {scaler.mean_.shape[0]} features, but live has {len(COLS)}"
-
-            # Scale features
-            X_scaled = scaler.transform(df)
-
-            # 4-class prediction
-            pred = int(clf.predict(X_scaled)[0])
-
-            # Get probabilities for diagnostics
-            if hasattr(clf, "predict_proba"):
-                probas = clf.predict_proba(X_scaled)[0]
-            else:
-                probas = None
-
-            # Optional smoothing via majority vote
-            votes.append(pred)
-            if VOTE_LEN > 1:
-                # For multi-class, use most common value
-                pred = max(set(votes), key=votes.count)
-
-            # Print diagnostics
-            class_names = ['REST', 'FOCUS', 'LEFT', 'RIGHT']
-            if probas is not None:
-                proba_str = " ".join([f"{class_names[i]}:{probas[i]:.2f}" for i in range(len(probas))])
-                print(f"{proba_str} | pred={class_names[pred]}")
-            else:
-                print(f"pred={class_names[pred]}")
-
-            # 4-class mouse control
-            if HAVE_PYAUTOGUI:
-                if pred == 0:
-                    # REST - stop cursor (do nothing)
-                    pass
-                elif pred == 1:
-                    # FOCUS - move cursor UP/FORWARD
-                    pyautogui.move(0, -MOUSE_UP_SPEED, duration=0)
-                    print("[MOUSE] ↑ UP")
-                elif pred == 2:
-                    # LEFT FIST - move cursor LEFT
-                    pyautogui.move(-MOUSE_SPEED, 0, duration=0)
-                    print("[MOUSE] ← LEFT")
-                elif pred == 3:
-                    # RIGHT FIST - move cursor RIGHT
-                    pyautogui.move(MOUSE_SPEED, 0, duration=0)
-                    print("[MOUSE] → RIGHT")
-
-            # Sliding window: remove STEP samples for overlap
-            # STEP=256 → prediction every 0.5s, STEP=512 → every 1s
-            for _ in range(min(STEP, len(block))):
-                block.popleft()
     except KeyboardInterrupt:
-        print("\n[INFO] Stopped by user.")
+        print("\n[INFO] Stopped.")
     finally:
+        stop_event.set()
         try:
             ser.close()
-            print("[INFO] Serial closed.")
         except Exception:
             pass
 

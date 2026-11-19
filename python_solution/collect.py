@@ -1,124 +1,157 @@
 #!/Users/sorin/Documents/Repos/BCI/python_solution/.venv/bin/python
+"""
+collect.py — Raw EEG data collector for BioAmp EXG Pill + Arduino UNO R4
+
+Usage:
+    ./collect.py <state_name>          # e.g. ./collect.py 08_relax_up
+    ./collect.py <state_name> <secs>   # e.g. ./collect.py 08_relax_up 120
+
+Saves to: ../artefacts/data/<state_name>.csv
+Requires: signal.ino uploaded (512 Hz raw ADC, no filters)
+"""
 import sys
 import csv
 import time
-import datetime as dt
+import os
 import serial
 import serial.tools.list_ports as list_ports
-import os
-import select  # POSIX: macOS/Linux non-blocking stdin
+import select
 
-BAUD_RATE = 115200
-CSV_PATH = 'signal.csv'
-MAX_SECONDS = 300  # None = no time limit; or set e.g. 300 for 5 minutes
+BAUD_RATE   = 115200
+SAMPLE_RATE = 512
+DEFAULT_SECS = 120
 
+EXCLUDE = ("bluetooth", "bt-", "debug")
+
+# ── output path ──────────────────────────────────────────────────────────────
+def resolve_path(name):
+    script_dir  = os.path.dirname(os.path.abspath(__file__))
+    data_dir    = os.path.join(script_dir, '..', 'artefacts', 'data')
+    os.makedirs(data_dir, exist_ok=True)
+    fname = name if name.endswith('.csv') else name + '.csv'
+    return os.path.abspath(os.path.join(data_dir, fname))
+
+# ── port selection ────────────────────────────────────────────────────────────
 def pick_port():
     ports = list(list_ports.comports())
     if not ports:
-        raise RuntimeError("No serial ports found. Is the board connected and powered?")
+        raise RuntimeError("No serial ports found.")
 
-    # Prefer native USB CDC ACM devices (UNO R4 appears as 'usbmodem')
+    # 1. UNO R4 native USB
     for p in ports:
-        dev = p.device
-        if 'usbmodem' in dev.lower():
-            return dev
+        if 'usbmodem' in p.device.lower():
+            return p.device
 
-    # Fallback to any cu.usb* device
+    # 2. Any USB serial, excluding Bluetooth
     for p in ports:
-        dev = p.device
-        if dev.startswith('/dev/cu.usb'):
-            return dev
+        dev = p.device.lower()
+        if dev.startswith('/dev/cu.usb') and not any(x in dev for x in EXCLUDE):
+            return p.device
 
-    # Last resort: first port
-    return ports[0].device
+    # 3. Fallback — skip Bluetooth
+    for p in ports:
+        if not any(x in p.device.lower() for x in EXCLUDE):
+            return p.device
 
+    raise RuntimeError("No suitable port found (only Bluetooth detected?).")
+
+# ── main ──────────────────────────────────────────────────────────────────────
 def main():
-    # Resolve port
+    if len(sys.argv) < 2:
+        print("Usage: ./collect.py <state_name> [seconds]")
+        print("  e.g. ./collect.py 08_relax_up")
+        print("  e.g. ./collect.py 08_relax_up 120")
+        sys.exit(1)
+
+    state_name  = sys.argv[1]
+    duration    = int(sys.argv[2]) if len(sys.argv) > 2 else DEFAULT_SECS
+    out_path    = resolve_path(state_name)
+
+    # Warn if file already exists
+    if os.path.exists(out_path):
+        ans = input(f"[WARN] {out_path} already exists. Overwrite? [y/N] ").strip().lower()
+        if ans != 'y':
+            print("Aborted.")
+            sys.exit(0)
+
     port = pick_port()
-    print(f"[INFO] Opening {port} @ {BAUD_RATE}")
+    print(f"[INFO] Port    : {port} @ {BAUD_RATE} baud")
+    print(f"[INFO] Output  : {out_path}")
+    print(f"[INFO] Duration: {duration}s  (~{duration * SAMPLE_RATE} samples)")
+    print()
 
     try:
         ser = serial.Serial(port, BAUD_RATE, timeout=1)
     except serial.SerialException as e:
-        print(f"[ERROR] Failed to open {port}: {e}")
+        print(f"[ERROR] {e}")
         sys.exit(1)
 
+    time.sleep(2.0)          # wait for Arduino reset
+    ser.reset_input_buffer()
+
+    n_samples = 0
+
     try:
-        # Allow board reset on open
-        time.sleep(2.0)
-        ser.reset_input_buffer()
-
-        # Open CSV and write header if new
-        file_exists = os.path.exists(CSV_PATH)
-        with open(CSV_PATH, 'a', newline='') as f:
+        with open(out_path, 'w', newline='') as f:
             writer = csv.writer(f)
-            if not file_exists or os.path.getsize(CSV_PATH) == 0:
-                writer.writerow(['timestamp', 'value'])
+            writer.writerow(['index', 'value'])   # header
 
-            print("[INFO] Collecting data...")
-            print("[INFO] Press ENTER to stop")
-            if MAX_SECONDS:
-                print(f"[INFO] Auto-stop after {MAX_SECONDS} seconds.")
+            print(f">>> Recording '{state_name}' — hold your state!")
+            print("    Press ENTER to stop early.\n")
 
-            start = time.time()
-
-            # --- Per-second print state ---
-            last_print_sec = int(time.time())
-            last_line_in_sec = None  # store the latest valid line within the current second
+            start     = time.time()
+            last_print = start
 
             while True:
-                # 1) Stop on ENTER (empty line)
+                # stop on ENTER
                 rlist, _, _ = select.select([sys.stdin], [], [], 0.0)
-                if rlist:
-                    user_line = sys.stdin.readline().strip()
-                    if user_line == '':
-                        print("[INFO] Stop command received.")
-                        break
-
-                # Optional time cap
-                if MAX_SECONDS is not None and (time.time() - start) >= MAX_SECONDS:
-                    print("[INFO] Reached time limit. Stopping.")
+                if rlist and sys.stdin.readline().strip() == '':
+                    print("\n[INFO] Stopped early.")
                     break
 
-                # 2) Read serial line (non-blocking via timeout=1)
+                # time limit
+                elapsed = time.time() - start
+                if elapsed >= duration:
+                    print("\n[INFO] Done.")
+                    break
+
+                # countdown every second
+                if time.time() - last_print >= 1.0:
+                    remaining = max(0, duration - int(elapsed))
+                    bar_len   = 30
+                    filled    = int(bar_len * elapsed / duration)
+                    bar       = '█' * filled + '░' * (bar_len - filled)
+                    print(f"\r  [{bar}] {remaining:3d}s left  |  {n_samples} samples", end='', flush=True)
+                    last_print = time.time()
+
+                # read serial
                 try:
                     raw = ser.readline()
                 except serial.SerialException as e:
-                    print(f"[WARN] Serial read error: {e}")
+                    print(f"\n[WARN] Serial error: {e}")
                     continue
 
                 if raw:
-                    try:
-                        line = raw.decode('utf-8', errors='ignore').strip()
-                    except Exception:
-                        line = raw.decode('latin-1', errors='ignore').strip()
-
+                    line = raw.decode('utf-8', errors='ignore').strip()
                     if line:
-                        # Write to CSV
-                        ts = dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')
-                        writer.writerow([ts, line])
-
-                        # Update the "latest this second"
-                        last_line_in_sec = line
-
-                # 3) Once per second, print the latest line seen in that second
-                now_sec = int(time.time())
-                if now_sec != last_print_sec:
-                    if last_line_in_sec is not None:
-                        # Print to stdout with a timestamp
-                        ts_print = dt.datetime.now().strftime('%H:%M:%S')
-                        print(f"[{ts_print}] {last_line_in_sec}")
-                        last_line_in_sec = None  # reset for the new second
-                    last_print_sec = now_sec
+                        try:
+                            int(line)   # validate it's a number
+                        except ValueError:
+                            continue
+                        writer.writerow([n_samples, line])
+                        n_samples += 1
 
     except KeyboardInterrupt:
-        print("\n[INFO] Stopped by user (Ctrl+C).")
+        print("\n[INFO] Stopped by Ctrl+C.")
     finally:
-        try:
-            ser.close()
-            print("[INFO] Serial port closed.")
-        except Exception:
-            pass
+        ser.close()
 
-if __name__ == "__main__":
+    os.system('afplay /System/Library/Sounds/Glass.aiff')
+    print(f"\n[OK] Saved {n_samples} samples → {out_path}")
+    expected = duration * SAMPLE_RATE
+    if n_samples < expected * 0.9:
+        print(f"[WARN] Expected ~{expected} samples at {SAMPLE_RATE} Hz — got {n_samples}.")
+        print("       Check that signal.ino is uploaded (not a slower sketch).")
+
+if __name__ == '__main__':
     main()
