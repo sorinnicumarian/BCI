@@ -5,15 +5,15 @@ History goes to `ai/ITERATIONS.md` and `ai/DECISIONS.md`; prune this file on eve
 Keep the top stable and put what changes often at the bottom (Status): a stable start is cached and costs ~10x less.
 
 ## Goal and metric
-- Goal: <one line>
-- Scoring metric (the real one, e.g. rank not profit): <...>
-- Deadline / constraints: <...>
+- Goal: 4-direction mouse control for tetraparesis patients from ONE EEG/EOG channel (RelaxUp, FocusDown, CBRight, SingLeft; double blink = click). Target design = README section 4 (4-class); `predict.py` is currently 2-class.
+- Scoring metric: offline 4-class balanced accuracy (chance 0.25) from `scripts/judge.py`, mean over datasets 06/08/09, chronological 70/30 split per recording. Final truth = live control with the headset.
+- Deadline / constraints: none set. Hardware: Arduino UNO R4 + BioAmp EXG Pill, single channel A0, 512 Hz, 115200 baud.
 
 ## Map
 - Main code: `python_solution/` (`predict.py` live prediction, `collect.py` data collection, `diagnose.py` serial rate check); Arduino sketch `arduino_solution/01-bio_amp_512hz/`; training `notebook/create_prediction_model.ipynb`; datasets `artefacts/data/`
 - Docs: `README.md`, `4CLASS_MOUSE_GUIDE.md`, `presentation.md`
 - Hardware: Arduino UNO R4 + BioAmp EXG Pill, single channel A0, 512Hz, 115200 baud
-- Judge / benchmark: <command> (must run in seconds; paired seeds or fixed inputs)
+- Judge / benchmark: `uv run scripts/judge.py` (~3 s, fixed recorded inputs, no hardware); `--smoke` = dataset 08 only
 - `ai/MECHANISMS.md` how the system works + gaps | `ai/NOTES.md` facts, open questions, known problems
 - `ai/ITERATIONS.md` every tested change | `ai/REJECTED.md` rejected ideas + conditions
 - `ai/DECISIONS.md` who decided what, and on what basis
@@ -22,9 +22,11 @@ Keep the top stable and put what changes often at the bottom (Status): a stable 
 
 ## Verified commands
 Only commands someone actually ran, with the date. A command that fails as committed says so.
-- `<command>`: <what it does> (verified <YYYY-MM-DD>)
+- `uv run scripts/judge.py`: scores live rule, logreg, random forest on 06/08/09 (verified 2026-11-20)
+- `uv run scripts/judge.py --smoke --method live --method logreg`: test gate, ~1.3 s (verified 2026-11-20)
+- `uv run scripts/judge.py --save python_solution/model4.pkl --train-on 09`: fits the 4-class logreg for `BCI_MODEL` (verified 2026-11-20)
 
-**NOT BUILT:** <tests? CI? deploy?>. Never present something as working until it is listed above with a date.
+**NOT BUILT:** unit tests, CI, `python_solution/.venv` (the scripts' shebang points to it but it doesn't exist). Live `BCI_MODEL=... ./predict.py` is NOT verified on hardware. Never present something as working until it is listed above with a date.
 
 ## Loop (one change at a time)
 New behaviour = new flag, default off -> run the judge -> keep or revert -> one row in `ai/ITERATIONS.md` -> commit.
@@ -41,7 +43,8 @@ stuck agent is visible. Start each one with `### 🔄⏱️ CONT. UPDATE HH:MM` 
 5. A failed check is a correct outcome. Explain it, name who must decide, and stop. Never edit the input to make it pass.
 
 ## Rules
-1. <hard constraints: time limits, no crashes, don't hard-code X ...>
+1. Live loop: never block the serial reader (pyautogui must stay in its own thread; it stalls on macOS). Always `reset_input_buffer()` after `sleep(0.5)` on port open.
+6. Red wire stays on the forehead (swapped polarity rails the ADC at 1023).
 2. Every action outside the repo (upload, deploy, submit) is logged at the moment it happens: what, hash, time.
 3. Numbering of iterations: prefix with your name/branch to avoid collisions.
 4. Irreversible actions (drop/delete/truncate, force-push, deleting cloud resources) need explicit consent first.
@@ -65,5 +68,7 @@ Switch mode: `uvx copier update --trust --data project_mode=client` (or `persona
 <Add one line each time the same mistake happens twice. This list is worth more than any general advice.>
 
 ## Status
-- Current best: 4-class EEG+EOG mouse control, ~65% accuracy (ds06); binary SVM 75.5% (ds09)
+- Judge (2026-11-20): live rule 0.300, 4-class logreg 0.813, random forest 0.805 (chance 0.25).
+- 4-class logreg is in `predict.py` behind `BCI_MODEL` (default off); not tried live yet.
+- Big caveat: each class is one separate recording, so offline scores may partly learn "which recording" (see `ai/NOTES.md` #1).
 - Open todos: `human/STATUS.md`
