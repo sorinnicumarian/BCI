@@ -36,12 +36,18 @@ STEP = 128   # slide 128 samples → 4 predictions/s
 
 BETA_THRESH   = 13.0   # β% below → Relax ↑,  at or above → Focus ↓
 
+# Optional 4-class model (default off). Train it with:
+#   uv run scripts/judge.py --save python_solution/model4.pkl
+# then run: BCI_MODEL=model4.pkl ./predict.py
+BCI_MODEL = os.environ.get("BCI_MODEL", "")
+
 MOUSE_STEP    = 8
 MOVE_EVERY_MS = 50
 EPS = 1e-12
 
-CLASS_NAMES = {0: 'Relax ↑', 1: 'Focus ↓'}
-MOUSE_MOVE  = {0: (0, -MOUSE_STEP), 1: (0, MOUSE_STEP)}
+CLASS_NAMES = {0: 'Relax ↑', 1: 'Focus ↓', 2: 'CB →', 3: 'Sing ←'}
+MOUSE_MOVE  = {0: (0, -MOUSE_STEP), 1: (0, MOUSE_STEP),
+               2: (MOUSE_STEP, 0), 3: (-MOUSE_STEP, 0)}
 
 
 # ── SERIAL PORT ───────────────────────────────────────────────────────────────
@@ -79,6 +85,25 @@ def band_powers(x):
     E_a = psd[(freqs >= 8.0) & (freqs <= 13.0)].sum() / total
     E_b = psd[(freqs >= 13.0) & (freqs <= 30.0)].sum() / total
     return E_d * 100, E_t * 100, E_a * 100, E_b * 100
+
+
+# ── FEATURES (shared with scripts/judge.py) ──────────────────────────────────
+def features(x):
+    d, t, a, b = band_powers(x)
+    dx  = np.diff(x)
+    var = x.var() + EPS
+    mob  = np.sqrt(dx.var() / var)
+    comp = np.sqrt(np.diff(dx).var() / (dx.var() + EPS)) / (mob + EPS)
+    return [d, t, a, b, a / (b + EPS), b / (t + EPS),
+            np.log(var), np.abs(dx).sum(), np.ptp(x), x.mean(), mob, comp]
+
+
+def load_model(path):
+    import pickle
+    if not os.path.isabs(path):
+        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), path)
+    with open(path, "rb") as f:
+        return pickle.load(f)
 
 
 # ── SERIAL READER THREAD ──────────────────────────────────────────────────────
@@ -122,9 +147,13 @@ def main():
     time.sleep(0.5)
     ser.reset_input_buffer()
 
-    print("[INFO] Streaming — binary linear only, no ML")
-    print(f"  β < {BETA_THRESH}%  → Relax ↑   (mouse up)")
-    print(f"  β ≥ {BETA_THRESH}%  → Focus ↓   (mouse down)")
+    model = load_model(BCI_MODEL) if BCI_MODEL else None
+    if model is not None:
+        print(f"[INFO] Streaming — 4-class model {BCI_MODEL}")
+    else:
+        print("[INFO] Streaming — binary linear only, no ML")
+        print(f"  β < {BETA_THRESH}%  → Relax ↑   (mouse up)")
+        print(f"  β ≥ {BETA_THRESH}%  → Focus ↓   (mouse down)")
     print()
     print("  δ%      θ%      α%      β%    raw   buf   → class")
     print("  " + "-" * 55)
@@ -158,7 +187,10 @@ def main():
                 std = x.std()
                 if std > 0.5 and x.max() < 1010 and x.min() > 10:
                     d_pct, t_pct, a_pct, b_pct = band_powers(x)
-                    current_class_ref[0] = 0 if b_pct < BETA_THRESH else 1
+                    if model is not None:
+                        current_class_ref[0] = int(model.predict([features(x)])[0])
+                    else:
+                        current_class_ref[0] = 0 if b_pct < BETA_THRESH else 1
 
                 for _ in range(STEP):
                     raw_buf.popleft()

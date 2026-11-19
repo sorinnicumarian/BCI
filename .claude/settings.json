@@ -2,7 +2,7 @@
   "env": {
     "FINOPS_SESSION_BUDGET_USD": "10",
     "CONTEXT_MAX_AGE_DAYS": "30",
-    "TEST_GATE_CMD": "",
+    "TEST_GATE_CMD": "python3 -m py_compile python_solution/predict.py scripts/judge.py && uv run -q scripts/judge.py --smoke --method live --method logreg",
     "TEST_GATE_MAX_BLOCKS": "3"
   },
   "hooks": {
